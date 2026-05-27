@@ -202,7 +202,7 @@ export async function startGame(roomId: string, players: PlayerRow[]) {
   await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
   await supabase.from("game_state").upsert({
     room_id: roomId,
-    board: emptyBoard() as unknown as object,
+    board: emptyBoard() as unknown as never,
     current_turn_index: 0,
     red_time_left: 300,
     blue_time_left: 300,
@@ -217,7 +217,7 @@ export async function resetGame(roomId: string, players: PlayerRow[]) {
   await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
   await supabase.from("game_state").upsert({
     room_id: roomId,
-    board: emptyBoard() as unknown as object,
+    board: emptyBoard() as unknown as never,
     current_turn_index: 0,
     red_time_left: 300,
     blue_time_left: 300,
