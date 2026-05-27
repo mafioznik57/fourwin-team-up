@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
+import { Route as RoomCodeGameRouteImport } from './routes/room.$code.game'
 
 const CreateRoute = CreateRouteImport.update({
   id: '/create',
@@ -28,35 +29,43 @@ const RoomCodeRoute = RoomCodeRouteImport.update({
   path: '/room/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RoomCodeGameRoute = RoomCodeGameRouteImport.update({
+  id: '/game',
+  path: '/game',
+  getParentRoute: () => RoomCodeRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/room/$code': typeof RoomCodeRoute
+  '/room/$code': typeof RoomCodeRouteWithChildren
+  '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/room/$code': typeof RoomCodeRoute
+  '/room/$code': typeof RoomCodeRouteWithChildren
+  '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/room/$code': typeof RoomCodeRoute
+  '/room/$code': typeof RoomCodeRouteWithChildren
+  '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/room/$code'
+  fullPaths: '/' | '/create' | '/room/$code' | '/room/$code/game'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/room/$code'
-  id: '__root__' | '/' | '/create' | '/room/$code'
+  to: '/' | '/create' | '/room/$code' | '/room/$code/game'
+  id: '__root__' | '/' | '/create' | '/room/$code' | '/room/$code/game'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
-  RoomCodeRoute: typeof RoomCodeRoute
+  RoomCodeRoute: typeof RoomCodeRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -82,13 +91,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoomCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/room/$code/game': {
+      id: '/room/$code/game'
+      path: '/game'
+      fullPath: '/room/$code/game'
+      preLoaderRoute: typeof RoomCodeGameRouteImport
+      parentRoute: typeof RoomCodeRoute
+    }
   }
 }
+
+interface RoomCodeRouteChildren {
+  RoomCodeGameRoute: typeof RoomCodeGameRoute
+}
+
+const RoomCodeRouteChildren: RoomCodeRouteChildren = {
+  RoomCodeGameRoute: RoomCodeGameRoute,
+}
+
+const RoomCodeRouteWithChildren = RoomCodeRoute._addFileChildren(
+  RoomCodeRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
-  RoomCodeRoute: RoomCodeRoute,
+  RoomCodeRoute: RoomCodeRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
