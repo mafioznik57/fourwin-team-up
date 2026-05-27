@@ -223,8 +223,7 @@ function GamePage() {
       }
       const { error } = await supabase
         .from("game_state")
-        // @ts-expect-error board json
-        .update(update)
+        .update(update as never)
         .eq("room_id", state.room_id);
       if (error) toast.error(error.message);
     },
