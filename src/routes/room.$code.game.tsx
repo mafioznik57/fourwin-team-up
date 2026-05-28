@@ -388,6 +388,21 @@ function GamePage() {
   const winningSet = new Set<string>(((state.winning_cells as [number, number][]) || []).map(([r, c]) => `${r},${c}`));
   const order = (room.turn_order || []) as string[];
 
+  // Live countdown for disconnected player
+  const dcPlayer = state.disconnected_player_id
+    ? players.find((p) => p.id === state.disconnected_player_id) || null
+    : null;
+  const dcSecondsLeft = state.disconnect_deadline
+    ? Math.max(0, Math.ceil((new Date(state.disconnect_deadline).getTime() - Date.now()) / 1000))
+    : 0;
+
+  // Forfeit detection for game-over dialog
+  const redIds = players.filter((p) => p.team === "red").map((p) => p.id);
+  const blueIds = players.filter((p) => p.team === "blue").map((p) => p.id);
+  const redForfeit = redIds.length > 0 && redIds.every((id) => abandoned.has(id));
+  const blueForfeit = blueIds.length > 0 && blueIds.every((id) => abandoned.has(id));
+  const forfeitTeam: Team | null = redForfeit ? "red" : blueForfeit ? "blue" : null;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-5xl mx-auto px-3 py-4 md:py-6">
@@ -398,18 +413,37 @@ function GamePage() {
           <div className="text-xs text-muted-foreground">Room <span className="font-mono">{upperCode}</span></div>
         </div>
 
+        {dcPlayer && !state.winner && (
+          <div className="mb-3 p-3 rounded-md border border-amber-500/50 bg-amber-500/10 text-amber-200 text-sm text-center font-medium">
+            Player <span className="font-bold">{dcPlayer.nickname}</span> disconnected. Waiting{" "}
+            <span className="font-mono">{dcSecondsLeft}s</span>…
+          </div>
+        )}
+        {abandoned.size > 0 && !dcPlayer && !state.winner && (
+          <div className="mb-3 p-2 rounded-md border border-border bg-secondary/40 text-xs text-muted-foreground text-center">
+            {players
+              .filter((p) => abandoned.has(p.id))
+              .map((p) => p.nickname)
+              .join(", ")}{" "}
+            left — teammate plays alone.
+          </div>
+        )}
+
         {/* Turn order bar */}
         <Card className="p-3 bg-card border-border">
           <div className="grid grid-cols-4 gap-2">
             {order.map((pid, idx) => {
               const p = players.find((x) => x.id === pid);
               if (!p) return <div key={pid} />;
-              const active = idx === state.current_turn_index && !state.winner;
+              const isCurrentSlot = idx === state.current_turn_index && !state.winner;
+              const active = isCurrentSlot && effectivePlayerId === p.id;
+              const isAbandoned = abandoned.has(p.id);
+              const isDisconnected = state.disconnected_player_id === p.id;
               return (
                 <div
                   key={pid}
                   className={`relative p-2 rounded-md text-center transition ${
-                    active ? "ring-2" : "opacity-50"
+                    active ? "ring-2" : isAbandoned ? "opacity-30 line-through" : "opacity-60"
                   }`}
                   style={{
                     backgroundColor: `${p.team === "red" ? "#ef4444" : "#3b82f6"}1f`,
@@ -422,6 +456,8 @@ function GamePage() {
                       style={{ backgroundColor: p.team === "red" ? "#ef4444" : "#3b82f6" }}
                     />
                     <div className="text-xs sm:text-sm font-medium truncate">{p.nickname}</div>
+                    {isDisconnected && <span className="text-xs">⏳</span>}
+                    {isAbandoned && <span className="text-xs">🚪</span>}
                   </div>
                   {bubbles[p.id] && (
                     <div className="absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap bg-background border border-border px-2 py-1 rounded-md text-xs shadow-lg animate-in fade-in zoom-in">
@@ -485,11 +521,11 @@ function GamePage() {
         <div className="text-center mt-3 text-sm">
           {state.winner ? (
             <span className="text-muted-foreground">Game over</span>
-          ) : currentPlayer ? (
+          ) : effectivePlayer ? (
             <span>
               Turn:{" "}
-              <span style={{ color: currentTeam === "red" ? "#ef4444" : "#3b82f6" }} className="font-semibold">
-                {currentPlayer.nickname}
+              <span style={{ color: effectivePlayer.team === "red" ? "#ef4444" : "#3b82f6" }} className="font-semibold">
+                {effectivePlayer.nickname}
               </span>{" "}
               {isMyTurn ? "(your move)" : ""}
             </span>
@@ -539,6 +575,17 @@ function GamePage() {
             <DialogTitle>
               {state.winner === "draw" ? (
                 "It's a draw!"
+              ) : forfeitTeam && state.winner && state.winner !== "draw" ? (
+                <span>
+                  <span style={{ color: forfeitTeam === "red" ? "#ef4444" : "#3b82f6" }} className="font-bold">
+                    Team {forfeitTeam === "red" ? "Red" : "Blue"}
+                  </span>{" "}
+                  forfeited.{" "}
+                  <span style={{ color: state.winner === "red" ? "#ef4444" : "#3b82f6" }} className="font-bold">
+                    {state.winner === "red" ? "Red" : "Blue"}
+                  </span>{" "}
+                  team wins!
+                </span>
               ) : (
                 <span>
                   <span style={{ color: state.winner === "red" ? "#ef4444" : "#3b82f6" }} className="font-bold">
@@ -550,7 +597,9 @@ function GamePage() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {state.winner && state.winner !== "draw"
+            {forfeitTeam
+              ? "Both teammates disconnected."
+              : state.winner && state.winner !== "draw"
               ? "Four in a row — well played."
               : "The board is full with no winner."}
           </p>
