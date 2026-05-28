@@ -127,6 +127,9 @@ export interface GameStateRow {
   winner: string | null;
   winning_cells: [number, number][] | null;
   updated_at: string;
+  disconnected_player_id: string | null;
+  disconnect_deadline: string | null;
+  abandoned_player_ids: string[];
 }
 
 /** Find or create a room by code, ensure current client is joined as a player. */
