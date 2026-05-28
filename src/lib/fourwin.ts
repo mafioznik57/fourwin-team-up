@@ -10,7 +10,11 @@ export function emptyBoard(): Board {
   return Array.from({ length: ROWS }, () => Array<Cell>(COLS).fill(null));
 }
 
-export function dropPiece(board: Board, col: number, piece: "R" | "B"): { board: Board; row: number } | null {
+export function dropPiece(
+  board: Board,
+  col: number,
+  piece: "R" | "B",
+): { board: Board; row: number } | null {
   if (col < 0 || col >= COLS) return null;
   for (let r = ROWS - 1; r >= 0; r--) {
     if (board[r][col] === null) {
@@ -23,7 +27,12 @@ export function dropPiece(board: Board, col: number, piece: "R" | "B"): { board:
 }
 
 export function checkWin(board: Board): { winner: "R" | "B"; cells: [number, number][] } | null {
-  const dirs: [number, number][] = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  const dirs: [number, number][] = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const v = board[r][c];
@@ -203,32 +212,50 @@ export async function createRoom(nickname: string, team: Team) {
 export async function startGame(roomId: string, players: PlayerRow[]) {
   // randomize turn order across all 4 players
   const order = shuffle(players.map((p) => p.id));
-  await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
-  await supabase.from("game_state").upsert({
-    room_id: roomId,
-    board: emptyBoard() as unknown as never,
-    current_turn_index: 0,
-    red_time_left: 300,
-    blue_time_left: 300,
-    last_tick: new Date().toISOString(),
-    winner: null,
-    winning_cells: null,
-  });
+  const { error: stateError } = await supabase.from("game_state").upsert(
+    {
+      room_id: roomId,
+      board: emptyBoard() as unknown as never,
+      current_turn_index: 0,
+      red_time_left: 300,
+      blue_time_left: 300,
+      last_tick: new Date().toISOString(),
+      winner: null,
+      winning_cells: null,
+    },
+    { onConflict: "room_id" },
+  );
+  if (stateError) throw stateError;
+
+  const { error: roomError } = await supabase
+    .from("rooms")
+    .update({ status: "playing", turn_order: order })
+    .eq("id", roomId);
+  if (roomError) throw roomError;
 }
 
 export async function resetGame(roomId: string, players: PlayerRow[]) {
   const order = shuffle(players.map((p) => p.id));
-  await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
-  await supabase.from("game_state").upsert({
-    room_id: roomId,
-    board: emptyBoard() as unknown as never,
-    current_turn_index: 0,
-    red_time_left: 300,
-    blue_time_left: 300,
-    last_tick: new Date().toISOString(),
-    winner: null,
-    winning_cells: null,
-  });
+  const { error: stateError } = await supabase.from("game_state").upsert(
+    {
+      room_id: roomId,
+      board: emptyBoard() as unknown as never,
+      current_turn_index: 0,
+      red_time_left: 300,
+      blue_time_left: 300,
+      last_tick: new Date().toISOString(),
+      winner: null,
+      winning_cells: null,
+    },
+    { onConflict: "room_id" },
+  );
+  if (stateError) throw stateError;
+
+  const { error: roomError } = await supabase
+    .from("rooms")
+    .update({ status: "playing", turn_order: order })
+    .eq("id", roomId);
+  if (roomError) throw roomError;
 }
 
 export function formatClock(seconds: number): string {
