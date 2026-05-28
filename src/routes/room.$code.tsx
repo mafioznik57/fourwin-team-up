@@ -46,14 +46,22 @@ function RoomLobby() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: r } = await supabase.from("rooms").select("*").eq("code", upperCode).maybeSingle();
+      const { data: r } = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("code", upperCode)
+        .maybeSingle();
       if (cancelled) return;
       if (!r) {
         setNotFound(true);
         return;
       }
       setRoom(r as RoomRow);
-      const { data: ps } = await supabase.from("players").select("*").eq("room_id", r.id).order("slot_number");
+      const { data: ps } = await supabase
+        .from("players")
+        .select("*")
+        .eq("room_id", r.id)
+        .order("slot_number");
       if (cancelled) return;
       setPlayers((ps || []) as PlayerRow[]);
       const clientId = getClientId();
@@ -74,38 +82,50 @@ function RoomLobby() {
     if (!room) return;
     const channel = supabase
       .channel(`lobby:${room.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` }, async (payload) => {
-        // If a player left, reset ready status for everyone remaining
-        if (payload.eventType === "DELETE") {
-          await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
-        }
-        const { data: ps } = await supabase.from("players").select("*").eq("room_id", room.id).order("slot_number");
-        setPlayers((ps || []) as PlayerRow[]);
-        const clientId = getClientId();
-        const mine = (ps || []).find((p) => p.client_id === clientId);
-        if (mine) setMe(mine as PlayerRow);
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` },
+        async (payload) => {
+          // If a player left, reset ready status for everyone remaining
+          if (payload.eventType === "DELETE") {
+            await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
+          }
+          const { data: ps } = await supabase
+            .from("players")
+            .select("*")
+            .eq("room_id", room.id)
+            .order("slot_number");
+          setPlayers((ps || []) as PlayerRow[]);
+          const clientId = getClientId();
+          const mine = (ps || []).find((p) => p.client_id === clientId);
+          if (mine) setMe(mine as PlayerRow);
 
-        // Auto-start when all 4 players are ready
-        if (ps && ps.length === 4 && ps.every((p) => p.ready)) {
-          // Re-check current room status from DB to avoid stale closure
-          const { data: freshRoom } = await supabase
-            .from("rooms")
-            .select("status")
-            .eq("id", room.id)
-            .maybeSingle();
-          if (freshRoom?.status === "waiting") {
-            try {
-              await startGame(room.id, ps as PlayerRow[]);
-            } catch (e) {
-              console.warn("startGame failed (likely race):", e);
+          // Auto-start when all 4 players are ready
+          if (ps && ps.length === 4 && ps.every((p) => p.ready)) {
+            // Re-check current room status from DB to avoid stale closure
+            const { data: freshRoom } = await supabase
+              .from("rooms")
+              .select("status")
+              .eq("id", room.id)
+              .maybeSingle();
+            if (freshRoom?.status === "waiting") {
+              try {
+                await startGame(room.id, ps as PlayerRow[]);
+              } catch (e) {
+                console.warn("startGame failed (likely race):", e);
+              }
             }
           }
-        }
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` }, (payload) => {
-        const updated = payload.new as RoomRow;
-        setRoom(updated);
-      })
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
+        (payload) => {
+          const updated = payload.new as RoomRow;
+          setRoom(updated);
+        },
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -161,7 +181,10 @@ function RoomLobby() {
     const usedSlots = new Set(players.filter((p) => p.id !== me.id).map((p) => p.slot_number));
     const slotNumber = !usedSlots.has(base) ? base : base + 1;
     // Switching team resets ready for everyone
-    const { error } = await supabase.from("players").update({ team, slot_number: slotNumber, ready: false }).eq("id", me.id);
+    const { error } = await supabase
+      .from("players")
+      .update({ team, slot_number: slotNumber, ready: false })
+      .eq("id", me.id);
     if (!error && room) {
       await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
     }
@@ -189,8 +212,12 @@ function RoomLobby() {
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
         <Card className="p-6 max-w-md w-full text-center bg-card border-border">
           <h1 className="text-xl font-bold">Room not found</h1>
-          <p className="text-sm text-muted-foreground mt-2">No room with code <span className="font-mono">{upperCode}</span>.</p>
-          <Button onClick={() => navigate({ to: "/" })} className="mt-4">Back home</Button>
+          <p className="text-sm text-muted-foreground mt-2">
+            No room with code <span className="font-mono">{upperCode}</span>.
+          </p>
+          <Button onClick={() => navigate({ to: "/" })} className="mt-4">
+            Back home
+          </Button>
         </Card>
       </div>
     );
@@ -203,7 +230,10 @@ function RoomLobby() {
     <div className="min-h-screen bg-background text-foreground px-4 py-8">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <button onClick={() => navigate({ to: "/" })} className="text-sm text-muted-foreground hover:text-foreground">
+          <button
+            onClick={() => navigate({ to: "/" })}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
             ← Back
           </button>
           <div className="text-sm text-muted-foreground">Lobby</div>
@@ -212,12 +242,20 @@ function RoomLobby() {
         <Card className="p-6 bg-card border-border">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">Room code</div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                Room code
+              </div>
               <div className="text-4xl font-extrabold tracking-widest">{upperCode}</div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={copyCode}><Copy className="w-4 h-4 mr-1" />Code</Button>
-              <Button variant="outline" size="sm" onClick={copyLink}><LinkIcon className="w-4 h-4 mr-1" />Link</Button>
+              <Button variant="outline" size="sm" onClick={copyCode}>
+                <Copy className="w-4 h-4 mr-1" />
+                Code
+              </Button>
+              <Button variant="outline" size="sm" onClick={copyLink}>
+                <LinkIcon className="w-4 h-4 mr-1" />
+                Link
+              </Button>
             </div>
           </div>
 
@@ -225,17 +263,31 @@ function RoomLobby() {
             <div className="mt-6 space-y-3">
               <label className="text-sm font-medium">Pick your nickname</label>
               <div className="flex gap-2">
-                <Input value={nick} onChange={(e) => setNick(e.target.value)} maxLength={16} placeholder="Your name" />
-                <Button onClick={join} disabled={joining} className="bg-[#a855f7] hover:bg-[#9333ea] text-white">
+                <Input
+                  value={nick}
+                  onChange={(e) => setNick(e.target.value)}
+                  maxLength={16}
+                  placeholder="Your name"
+                />
+                <Button
+                  onClick={join}
+                  disabled={joining}
+                  className="bg-[#a855f7] hover:bg-[#9333ea] text-white"
+                >
                   {joining ? "Joining…" : "Join"}
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">You'll be auto-assigned to the team with fewer players.</p>
+              <p className="text-xs text-muted-foreground">
+                You'll be auto-assigned to the team with fewer players.
+              </p>
             </div>
           ) : (
             <div className="mt-4 text-sm text-muted-foreground">
               You're <span className="text-foreground font-semibold">{me.nickname}</span> on{" "}
-              <span style={{ color: me.team === "red" ? "#ef4444" : "#3b82f6" }} className="font-semibold">
+              <span
+                style={{ color: me.team === "red" ? "#ef4444" : "#3b82f6" }}
+                className="font-semibold"
+              >
                 {me.team === "red" ? "Red" : "Blue"}
               </span>{" "}
               team.
@@ -244,8 +296,20 @@ function RoomLobby() {
         </Card>
 
         <div className="grid md:grid-cols-2 gap-4 mt-6">
-          <TeamPanel color="#ef4444" label="Red Team" players={redPlayers} me={me} onSwitch={() => switchTeam("red")} />
-          <TeamPanel color="#3b82f6" label="Blue Team" players={bluePlayers} me={me} onSwitch={() => switchTeam("blue")} />
+          <TeamPanel
+            color="#ef4444"
+            label="Red Team"
+            players={redPlayers}
+            me={me}
+            onSwitch={() => switchTeam("red")}
+          />
+          <TeamPanel
+            color="#3b82f6"
+            label="Blue Team"
+            players={bluePlayers}
+            me={me}
+            onSwitch={() => switchTeam("blue")}
+          />
         </div>
 
         <div className="mt-6 flex flex-col items-center gap-2">
@@ -266,8 +330,8 @@ function RoomLobby() {
             {players.length < 4
               ? `Waiting for players (${players.length}/4)`
               : players.every((p) => p.ready)
-              ? "Starting game…"
-              : `Ready: ${players.filter((p) => p.ready).length}/4`}
+                ? "Starting game…"
+                : `Ready: ${players.filter((p) => p.ready).length}/4`}
           </p>
         </div>
       </div>
@@ -293,9 +357,13 @@ function TeamPanel({
   return (
     <Card className="p-5 bg-card border-border" style={{ borderTop: `3px solid ${color}` }}>
       <div className="flex items-center justify-between">
-        <div className="font-bold" style={{ color }}>{label}</div>
+        <div className="font-bold" style={{ color }}>
+          {label}
+        </div>
         {canSwitch && (
-          <Button size="sm" variant="outline" onClick={onSwitch}>Switch here</Button>
+          <Button size="sm" variant="outline" onClick={onSwitch}>
+            Switch here
+          </Button>
         )}
       </div>
       <div className="mt-3 space-y-2">
@@ -310,7 +378,10 @@ function TeamPanel({
                 <>
                   <div className="w-6 h-6 rounded-full" style={{ backgroundColor: color }} />
                   <div className="flex-1 truncate">
-                    {p.nickname} {me?.id === p.id && <span className="text-xs text-muted-foreground">(you)</span>}
+                    {p.nickname}{" "}
+                    {me?.id === p.id && (
+                      <span className="text-xs text-muted-foreground">(you)</span>
+                    )}
                   </div>
                   {p.ready ? (
                     <span className="flex items-center gap-1 text-xs font-semibold text-green-500">
