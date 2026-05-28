@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,16 @@ import { Copy, Link as LinkIcon, Check, Hourglass } from "lucide-react";
 
 export const Route = createFileRoute("/room/$code")({
   head: () => ({ meta: [{ title: "Room — FourWin" }] }),
-  component: RoomLobby,
+  component: RoomRoute,
 });
+
+function RoomRoute() {
+  const location = useLocation();
+  if (location.pathname.toLowerCase().endsWith("/game")) {
+    return <Outlet />;
+  }
+  return <RoomLobby />;
+}
 
 function RoomLobby() {
   const { code } = Route.useParams();
