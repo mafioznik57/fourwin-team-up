@@ -55,9 +55,12 @@ export type Database = {
       }
       game_state: {
         Row: {
+          abandoned_player_ids: Json
           blue_time_left: number
           board: Json
           current_turn_index: number
+          disconnect_deadline: string | null
+          disconnected_player_id: string | null
           last_tick: string
           red_time_left: number
           room_id: string
@@ -66,9 +69,12 @@ export type Database = {
           winning_cells: Json | null
         }
         Insert: {
+          abandoned_player_ids?: Json
           blue_time_left?: number
           board: Json
           current_turn_index?: number
+          disconnect_deadline?: string | null
+          disconnected_player_id?: string | null
           last_tick?: string
           red_time_left?: number
           room_id: string
@@ -77,9 +83,12 @@ export type Database = {
           winning_cells?: Json | null
         }
         Update: {
+          abandoned_player_ids?: Json
           blue_time_left?: number
           board?: Json
           current_turn_index?: number
+          disconnect_deadline?: string | null
+          disconnected_player_id?: string | null
           last_tick?: string
           red_time_left?: number
           room_id?: string
