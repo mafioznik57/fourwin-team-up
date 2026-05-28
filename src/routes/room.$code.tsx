@@ -41,6 +41,8 @@ function RoomLobby() {
   const [joining, setJoining] = useState(false);
   const [me, setMe] = useState<PlayerRow | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const roomId = room?.id;
+  const roomStatus = room?.status;
 
   // Initial load
   useEffect(() => {
@@ -79,21 +81,21 @@ function RoomLobby() {
 
   // Realtime subscriptions for this room
   useEffect(() => {
-    if (!room) return;
+    if (!roomId) return;
     const channel = supabase
-      .channel(`lobby:${room.id}`)
+      .channel(`lobby:${roomId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` },
+        { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
         async (payload) => {
           // If a player left, reset ready status for everyone remaining
           if (payload.eventType === "DELETE") {
-            await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
+            await supabase.from("players").update({ ready: false }).eq("room_id", roomId);
           }
           const { data: ps } = await supabase
             .from("players")
             .select("*")
-            .eq("room_id", room.id)
+            .eq("room_id", roomId)
             .order("slot_number");
           setPlayers((ps || []) as PlayerRow[]);
           const clientId = getClientId();
@@ -106,11 +108,11 @@ function RoomLobby() {
             const { data: freshRoom } = await supabase
               .from("rooms")
               .select("status")
-              .eq("id", room.id)
+              .eq("id", roomId)
               .maybeSingle();
             if (freshRoom?.status === "waiting") {
               try {
-                await startGame(room.id, ps as PlayerRow[]);
+                await startGame(roomId, ps as PlayerRow[]);
               } catch (e) {
                 console.warn("startGame failed (likely race):", e);
               }
@@ -120,7 +122,7 @@ function RoomLobby() {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
+        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
         (payload) => {
           const updated = payload.new as RoomRow;
           setRoom(updated);
@@ -130,27 +132,27 @@ function RoomLobby() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [room?.id, navigate, upperCode]);
+  }, [roomId]);
 
   // Navigate to game whenever room becomes "playing" (covers both realtime updates
   // and the case where the player joins a room that's already started).
   useEffect(() => {
-    if (room?.status === "playing" && me) {
+    if (roomStatus === "playing" && me) {
       navigate({ to: "/room/$code/game", params: { code: upperCode } });
     }
-  }, [room?.status, me, navigate, upperCode]);
+  }, [roomStatus, me, navigate, upperCode]);
 
   // Safety net: poll room status every 2s in case Realtime drops the UPDATE event.
   useEffect(() => {
-    if (!room || room.status !== "waiting") return;
+    if (!roomId || roomStatus !== "waiting") return;
     const interval = setInterval(async () => {
-      const { data } = await supabase.from("rooms").select("*").eq("id", room.id).maybeSingle();
-      if (data && data.status !== room.status) {
+      const { data } = await supabase.from("rooms").select("*").eq("id", roomId).maybeSingle();
+      if (data && data.status !== roomStatus) {
         setRoom(data as RoomRow);
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [room?.id, room?.status]);
+  }, [roomId, roomStatus]);
 
   const join = async () => {
     if (!nick.trim()) {
