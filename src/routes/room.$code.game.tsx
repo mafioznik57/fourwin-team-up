@@ -57,6 +57,7 @@ function GamePage() {
   const [bubbles, setBubbles] = useState<Record<string, { msg: string; id: number }>>({});
   const [lastDrop, setLastDrop] = useState<{ row: number; col: number } | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
+  const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
 
   const me = useMemo(() => players.find((p) => p.client_id === getClientId()) || null, [players]);
 
@@ -134,6 +135,37 @@ function GamePage() {
     };
   }, [room]);
 
+  // Presence channel for disconnection detection
+  useEffect(() => {
+    if (!room || !me) return;
+    const channel = supabase.channel(`presence:${room.id}`, {
+      config: { presence: { key: me.id } },
+    });
+    const syncPresence = () => {
+      const state = channel.presenceState() as Record<string, unknown[]>;
+      setPresentIds(new Set(Object.keys(state)));
+    };
+    channel
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ player_id: me.id, online_at: new Date().toISOString() });
+        }
+      });
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [room, me]);
+
+  // Track last-seen timestamp per player; reset when present.
+  const lastSeenRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const now = Date.now();
+    for (const pid of presentIds) lastSeenRef.current[pid] = now;
+  }, [presentIds]);
+
   // Compute effective remaining time for active team (ticks down locally)
   const [, force] = useState(0);
   useEffect(() => {
@@ -153,6 +185,25 @@ function GamePage() {
     [currentPlayerId, players],
   );
   const currentTeam: Team | null = currentPlayer?.team ?? null;
+
+  const abandoned = useMemo(
+    () => new Set<string>((state?.abandoned_player_ids ?? []) as string[]),
+    [state?.abandoned_player_ids],
+  );
+
+  // If current player is abandoned, their teammate plays for them.
+  const effectivePlayerId: string | null = useMemo(() => {
+    if (!currentPlayerId || !currentPlayer) return currentPlayerId;
+    if (!abandoned.has(currentPlayerId)) return currentPlayerId;
+    const teammate = players.find(
+      (p) => p.team === currentPlayer.team && p.id !== currentPlayerId,
+    );
+    return teammate && !abandoned.has(teammate.id) ? teammate.id : currentPlayerId;
+  }, [currentPlayerId, currentPlayer, players, abandoned]);
+  const effectivePlayer = useMemo(
+    () => players.find((p) => p.id === effectivePlayerId) || null,
+    [effectivePlayerId, players],
+  );
 
   const elapsedSinceTick = state ? (Date.now() - new Date(state.last_tick).getTime()) / 1000 : 0;
   const redLeft = state ? (currentTeam === "red" && !state.winner ? state.red_time_left - elapsedSinceTick : state.red_time_left) : 300;
@@ -182,7 +233,92 @@ function GamePage() {
     }
   }, [redLeft, blueLeft, currentTeam, currentPlayerId, me, state]);
 
-  const isMyTurn = !!me && currentPlayerId === me?.id && !state?.winner;
+  const isMyTurn = !!me && effectivePlayerId === me?.id && !state?.winner;
+
+  // Disconnect monitoring: runs on every client, but writes are guarded by
+  // current DB state so only one update lands.
+  useEffect(() => {
+    if (!state || state.winner || !room || !me) return;
+    const interval = setInterval(async () => {
+      const now = Date.now();
+      const roomId = state.room_id;
+
+      // 1) Forfeit check: both members of a team abandoned -> other team wins.
+      const redIds = players.filter((p) => p.team === "red").map((p) => p.id);
+      const blueIds = players.filter((p) => p.team === "blue").map((p) => p.id);
+      const redOut = redIds.length > 0 && redIds.every((id) => abandoned.has(id));
+      const blueOut = blueIds.length > 0 && blueIds.every((id) => abandoned.has(id));
+      if (redOut || blueOut) {
+        const winner = redOut ? "blue" : "red";
+        await supabase
+          .from("game_state")
+          .update({ winner } as never)
+          .eq("room_id", roomId)
+          .is("winner", null);
+        return;
+      }
+
+      // 2) If someone is flagged disconnected:
+      if (state.disconnected_player_id && state.disconnect_deadline) {
+        const deadline = new Date(state.disconnect_deadline).getTime();
+        const dcId = state.disconnected_player_id;
+        // a) Reconnected before deadline -> clear flag.
+        if (presentIds.has(dcId) && now < deadline) {
+          await supabase
+            .from("game_state")
+            .update({
+              disconnected_player_id: null,
+              disconnect_deadline: null,
+            } as never)
+            .eq("room_id", roomId)
+            .eq("disconnected_player_id", dcId);
+          return;
+        }
+        // b) Deadline passed and still gone -> mark abandoned.
+        if (now >= deadline && !presentIds.has(dcId)) {
+          const nextAbandoned = Array.from(new Set([...(state.abandoned_player_ids || []), dcId]));
+          await supabase
+            .from("game_state")
+            .update({
+              disconnected_player_id: null,
+              disconnect_deadline: null,
+              abandoned_player_ids: nextAbandoned as unknown as never,
+            } as never)
+            .eq("room_id", roomId)
+            .eq("disconnected_player_id", dcId);
+          const p = players.find((x) => x.id === dcId);
+          if (p) toast(`${p.nickname} left. Their teammate will play alone.`);
+          return;
+        }
+      } else {
+        // 3) No active disconnect: detect a new one (missing for >=5s).
+        for (const p of players) {
+          if (abandoned.has(p.id)) continue;
+          if (presentIds.has(p.id)) continue;
+          const lastSeen = lastSeenRef.current[p.id];
+          // No record yet means we've never seen them this session; start the clock now.
+          if (!lastSeen) {
+            lastSeenRef.current[p.id] = now;
+            continue;
+          }
+          if (now - lastSeen >= 5000) {
+            const deadline = new Date(now + 30_000).toISOString();
+            await supabase
+              .from("game_state")
+              .update({
+                disconnected_player_id: p.id,
+                disconnect_deadline: deadline,
+              } as never)
+              .eq("room_id", roomId)
+              .is("disconnected_player_id", null)
+              .is("winner", null);
+            break;
+          }
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [state, room, me, players, presentIds, abandoned]);
 
   const handleDrop = useCallback(
     async (col: number) => {
