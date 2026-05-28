@@ -98,6 +98,7 @@ export interface PlayerRow {
   team: Team;
   slot_number: number;
   connected: boolean;
+  ready: boolean;
 }
 
 export interface RoomRow {
