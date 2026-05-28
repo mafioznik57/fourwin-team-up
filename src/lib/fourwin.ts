@@ -60,10 +60,13 @@ const NICK_KEY = "fourwin_nick";
 
 export function getClientId(): string {
   if (typeof window === "undefined") return "";
-  let id = localStorage.getItem(CLIENT_ID_KEY);
+  // Use sessionStorage so each browser tab is a distinct player.
+  // This lets you test 2v2 by opening multiple tabs in the same browser
+  // (instead of needing 4 separate incognito windows).
+  let id = sessionStorage.getItem(CLIENT_ID_KEY);
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem(CLIENT_ID_KEY, id);
+    sessionStorage.setItem(CLIENT_ID_KEY, id);
   }
   return id;
 }
