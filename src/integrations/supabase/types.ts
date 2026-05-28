@@ -14,6 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
+      match_results: {
+        Row: {
+          id: string
+          room_id: string | null
+          winner_team: string
+          red_player_ids: string[]
+          blue_player_ids: string[]
+          red_nicknames: string[]
+          blue_nicknames: string[]
+          elo_changes: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          room_id?: string | null
+          winner_team: string
+          red_player_ids?: string[]
+          blue_player_ids?: string[]
+          red_nicknames?: string[]
+          blue_nicknames?: string[]
+          elo_changes?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          room_id?: string | null
+          winner_team?: string
+          red_player_ids?: string[]
+          blue_player_ids?: string[]
+          red_nicknames?: string[]
+          blue_nicknames?: string[]
+          elo_changes?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      move_suggestions: {
+        Row: {
+          id: string
+          room_id: string
+          from_player_id: string
+          to_player_id: string
+          col: number
+          turn_index: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          room_id: string
+          from_player_id: string
+          to_player_id: string
+          col: number
+          turn_index: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          room_id?: string
+          from_player_id?: string
+          to_player_id?: string
+          col?: number
+          turn_index?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          id: string
+          nickname: string
+          avatar_id: string
+          elo: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          nickname: string
+          avatar_id?: string
+          elo?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          nickname?: string
+          avatar_id?: string
+          elo?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       chat_messages: {
         Row: {
           created_at: string

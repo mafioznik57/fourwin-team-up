@@ -17,11 +17,12 @@ import {
   type RoomRow,
   type Team,
 } from "@/lib/fourwin";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Lock } from "lucide-react";
+import { Lock, Lightbulb } from "lucide-react";
 
 export const Route = createFileRoute("/room/$code/game")({
   head: () => ({ meta: [{ title: "Game — FourWin" }] }),
@@ -45,10 +46,25 @@ interface ChatRow {
   created_at: string;
 }
 
+interface SuggestionRow {
+  id: string;
+  room_id: string;
+  from_player_id: string;
+  to_player_id: string;
+  col: number;
+  turn_index: number;
+}
+
+// ELO delta: +20 for win, -20 for loss, 0 for draw
+function calcEloDelta(result: "win" | "loss" | "draw"): number {
+  return result === "win" ? 20 : result === "loss" ? -20 : 0;
+}
+
 function GamePage() {
   const { code } = Route.useParams();
   const navigate = useNavigate();
   const upperCode = code.toUpperCase();
+  const { user } = useAuth();
 
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
@@ -58,6 +74,10 @@ function GamePage() {
   const [lastDrop, setLastDrop] = useState<{ row: number; col: number } | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
+  // Suggest move state
+  const [suggestion, setSuggestion] = useState<SuggestionRow | null>(null);
+  const [suggestPickOpen, setSuggestPickOpen] = useState(false);
+  const matchRecordedRef = useRef(false);
 
   const me = useMemo(() => players.find((p) => p.client_id === getClientId()) || null, [players]);
 
@@ -78,9 +98,7 @@ function GamePage() {
       if (gs) setState(gs as unknown as GameStateRow);
       setChats((cs || []) as ChatRow[]);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [upperCode]);
 
   // Realtime
@@ -96,7 +114,6 @@ function GamePage() {
         const next = payload.new as unknown as GameStateRow;
         setState((prev) => {
           if (prev && next) {
-            // detect new drop for animation
             const oldBoard = prev.board;
             const newBoard = next.board;
             for (let r = 0; r < ROWS; r++) {
@@ -129,11 +146,16 @@ function GamePage() {
           });
         }, 3000);
       })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "move_suggestions", filter: `room_id=eq.${room.id}` }, (payload) => {
+        const s = payload.new as SuggestionRow;
+        // Only show to the intended recipient
+        if (me && s.to_player_id === me.id) {
+          setSuggestion(s);
+        }
+      })
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [room]);
+    return () => { supabase.removeChannel(channel); };
+  }, [room, me]);
 
   // Presence channel for disconnection detection
   useEffect(() => {
@@ -154,19 +176,15 @@ function GamePage() {
           await channel.track({ player_id: me.id, online_at: new Date().toISOString() });
         }
       });
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [room, me]);
 
-  // Track last-seen timestamp per player; reset when present.
   const lastSeenRef = useRef<Record<string, number>>({});
   useEffect(() => {
     const now = Date.now();
     for (const pid of presentIds) lastSeenRef.current[pid] = now;
   }, [presentIds]);
 
-  // Compute effective remaining time for active team (ticks down locally)
   const [, force] = useState(0);
   useEffect(() => {
     const i = setInterval(() => force((n) => n + 1), 250);
@@ -191,7 +209,6 @@ function GamePage() {
     [state?.abandoned_player_ids],
   );
 
-  // If current player is abandoned, their teammate plays for them.
   const effectivePlayerId: string | null = useMemo(() => {
     if (!currentPlayerId || !currentPlayer) return currentPlayerId;
     if (!abandoned.has(currentPlayerId)) return currentPlayerId;
@@ -209,7 +226,6 @@ function GamePage() {
   const redLeft = state ? (currentTeam === "red" && !state.winner ? state.red_time_left - elapsedSinceTick : state.red_time_left) : 300;
   const blueLeft = state ? (currentTeam === "blue" && !state.winner ? state.blue_time_left - elapsedSinceTick : state.blue_time_left) : 300;
 
-  // Timeout detection — only the current player's client commits the timeout to avoid races
   const timeoutCommittedRef = useRef(false);
   useEffect(() => {
     if (!state || state.winner) {
@@ -235,15 +251,77 @@ function GamePage() {
 
   const isMyTurn = !!me && effectivePlayerId === me?.id && !state?.winner;
 
-  // Disconnect monitoring: runs on every client, but writes are guarded by
-  // current DB state so only one update lands.
+  // Record match result when game ends — only one client does it (the one whose turn it is,
+  // or the first red player as a fallback). Guard with matchRecordedRef to prevent duplication.
+  useEffect(() => {
+    if (!state?.winner || !room || players.length === 0) return;
+    if (matchRecordedRef.current) return;
+    // Only the "first" player in turn order (index 0) records the result to avoid races
+    const order = (room.turn_order || []) as string[];
+    if (!me || order[0] !== me.id) return;
+    matchRecordedRef.current = true;
+
+    (async () => {
+      const redPlayers = players.filter((p) => p.team === "red");
+      const bluePlayers = players.filter((p) => p.team === "blue");
+
+      // Fetch auth user IDs for players (stored in players table as client_id which is sessionStorage UUID,
+      // not auth.uid). We use the Supabase auth user ID from useAuth for the current user only.
+      // For others, we leave their IDs blank (they'll record via their own client).
+      // Instead, record with actual player row IDs and match them to auth users via profiles lookup.
+      const redNicknames = redPlayers.map((p) => p.nickname);
+      const blueNicknames = bluePlayers.map((p) => p.nickname);
+
+      // We use player.id (UUID from players table) as the identifier in match_results.
+      // The profile page queries by auth user ID — link them via a separate lookup.
+      // For now, use the auth user IDs we can resolve from profiles.
+      // Simple approach: store all 4 player nicknames; auth-linked ID only if the current user is in this game.
+      const currentUserInRed = user && redPlayers.some((p) => p.client_id === getClientId());
+      const currentUserInBlue = user && bluePlayers.some((p) => p.client_id === getClientId());
+
+      const redPlayerIds: string[] = user && currentUserInRed ? [user.id] : [];
+      const bluePlayerIds: string[] = user && currentUserInBlue ? [user.id] : [];
+
+      const winnerTeam = state.winner === "draw" ? "draw" : state.winner as string;
+
+      // Compute ELO changes
+      const eloChanges: Record<string, number> = {};
+      if (user) {
+        const myTeam = currentUserInRed ? "red" : currentUserInBlue ? "blue" : null;
+        if (myTeam) {
+          const result =
+            winnerTeam === "draw" ? "draw"
+            : myTeam === winnerTeam ? "win"
+            : "loss";
+          eloChanges[user.id] = calcEloDelta(result);
+
+          // Update ELO in profiles
+          const { data: profile } = await supabase.from("profiles").select("elo").eq("id", user.id).maybeSingle();
+          if (profile) {
+            await supabase.from("profiles").update({ elo: profile.elo + eloChanges[user.id] }).eq("id", user.id);
+          }
+        }
+      }
+
+      await supabase.from("match_results").insert({
+        room_id: room.id,
+        winner_team: winnerTeam,
+        red_player_ids: redPlayerIds,
+        blue_player_ids: bluePlayerIds,
+        red_nicknames: redNicknames,
+        blue_nicknames: blueNicknames,
+        elo_changes: eloChanges,
+      });
+    })();
+  }, [state?.winner, room, players, me, user]);
+
+  // Disconnect monitoring
   useEffect(() => {
     if (!state || state.winner || !room || !me) return;
     const interval = setInterval(async () => {
       const now = Date.now();
       const roomId = state.room_id;
 
-      // 1) Forfeit check: both members of a team abandoned -> other team wins.
       const redIds = players.filter((p) => p.team === "red").map((p) => p.id);
       const blueIds = players.filter((p) => p.team === "blue").map((p) => p.id);
       const redOut = redIds.length > 0 && redIds.every((id) => abandoned.has(id));
@@ -258,23 +336,17 @@ function GamePage() {
         return;
       }
 
-      // 2) If someone is flagged disconnected:
       if (state.disconnected_player_id && state.disconnect_deadline) {
         const deadline = new Date(state.disconnect_deadline).getTime();
         const dcId = state.disconnected_player_id;
-        // a) Reconnected before deadline -> clear flag.
         if (presentIds.has(dcId) && now < deadline) {
           await supabase
             .from("game_state")
-            .update({
-              disconnected_player_id: null,
-              disconnect_deadline: null,
-            } as never)
+            .update({ disconnected_player_id: null, disconnect_deadline: null } as never)
             .eq("room_id", roomId)
             .eq("disconnected_player_id", dcId);
           return;
         }
-        // b) Deadline passed and still gone -> mark abandoned.
         if (now >= deadline && !presentIds.has(dcId)) {
           const nextAbandoned = Array.from(new Set([...(state.abandoned_player_ids || []), dcId]));
           await supabase
@@ -291,24 +363,16 @@ function GamePage() {
           return;
         }
       } else {
-        // 3) No active disconnect: detect a new one (missing for >=5s).
         for (const p of players) {
           if (abandoned.has(p.id)) continue;
           if (presentIds.has(p.id)) continue;
           const lastSeen = lastSeenRef.current[p.id];
-          // No record yet means we've never seen them this session; start the clock now.
-          if (!lastSeen) {
-            lastSeenRef.current[p.id] = now;
-            continue;
-          }
+          if (!lastSeen) { lastSeenRef.current[p.id] = now; continue; }
           if (now - lastSeen >= 5000) {
             const deadline = new Date(now + 30_000).toISOString();
             await supabase
               .from("game_state")
-              .update({
-                disconnected_player_id: p.id,
-                disconnect_deadline: deadline,
-              } as never)
+              .update({ disconnected_player_id: p.id, disconnect_deadline: deadline } as never)
               .eq("room_id", roomId)
               .is("disconnected_player_id", null)
               .is("winner", null);
@@ -320,20 +384,20 @@ function GamePage() {
     return () => clearInterval(interval);
   }, [state, room, me, players, presentIds, abandoned]);
 
+  // Clear stale suggestions when turn changes
+  useEffect(() => {
+    if (suggestion && state && suggestion.turn_index !== state.current_turn_index) {
+      setSuggestion(null);
+    }
+  }, [state?.current_turn_index, suggestion]);
+
   const handleDrop = useCallback(
     async (col: number) => {
       if (!state || !me || !currentTeam) return;
-      if (!isMyTurn) {
-        toast.error("Not your turn");
-        return;
-      }
+      if (!isMyTurn) { toast.error("Not your turn"); return; }
       const piece = currentTeam === "red" ? "R" : "B";
       const result = dropPiece(state.board as Board, col, piece);
-      if (!result) {
-        toast.error("Column is full");
-        return;
-      }
-      // Update clocks: subtract elapsed from current team
+      if (!result) { toast.error("Column is full"); return; }
       const elapsed = (Date.now() - new Date(state.last_tick).getTime()) / 1000;
       const newRed = currentTeam === "red" ? Math.max(0, state.red_time_left - elapsed) : state.red_time_left;
       const newBlue = currentTeam === "blue" ? Math.max(0, state.blue_time_left - elapsed) : state.blue_time_left;
@@ -344,6 +408,8 @@ function GamePage() {
       const nextIndex = (state.current_turn_index + 1) % Math.max(order.length, 1);
 
       setLastDrop({ row: result.row, col });
+      setSuggestion(null);
+
       const update: Partial<GameStateRow> & { board: Board } = {
         board: result.board,
         current_turn_index: nextIndex,
@@ -351,16 +417,9 @@ function GamePage() {
         blue_time_left: Math.floor(newBlue),
         last_tick: new Date().toISOString() as unknown as string,
       };
-      if (win) {
-        update.winner = win.winner === "R" ? "red" : "blue";
-        update.winning_cells = win.cells;
-      } else if (draw) {
-        update.winner = "draw";
-      }
-      const { error } = await supabase
-        .from("game_state")
-        .update(update as never)
-        .eq("room_id", state.room_id);
+      if (win) { update.winner = win.winner === "R" ? "red" : "blue"; update.winning_cells = win.cells; }
+      else if (draw) { update.winner = "draw"; }
+      const { error } = await supabase.from("game_state").update(update as never).eq("room_id", state.room_id);
       if (error) toast.error(error.message);
     },
     [state, me, currentTeam, isMyTurn, room],
@@ -371,8 +430,40 @@ function GamePage() {
     await supabase.from("chat_messages").insert({ room_id: room.id, player_id: me.id, message: msg });
   };
 
+  // Suggest Move: find my teammate who is the active player
+  const canSuggest = useMemo(() => {
+    if (!me || !state || state.winner) return false;
+    // I'm NOT the active player, but my teammate IS
+    if (effectivePlayerId === me.id) return false;
+    const myTeammate = players.find(
+      (p) => p.team === me.team && p.id !== me.id
+    );
+    return myTeammate ? effectivePlayerId === myTeammate.id : false;
+  }, [me, effectivePlayerId, players, state]);
+
+  const sendSuggestion = async (col: number) => {
+    if (!me || !room || !state || !effectivePlayerId) return;
+    // Delete previous suggestion for this turn
+    await supabase
+      .from("move_suggestions")
+      .delete()
+      .eq("room_id", room.id)
+      .eq("from_player_id", me.id);
+
+    await supabase.from("move_suggestions").insert({
+      room_id: room.id,
+      from_player_id: me.id,
+      to_player_id: effectivePlayerId,
+      col,
+      turn_index: state.current_turn_index,
+    });
+    setSuggestPickOpen(false);
+    toast.success(`Suggested column ${col + 1}`);
+  };
+
   const playAgain = async () => {
     if (!room) return;
+    matchRecordedRef.current = false;
     await resetGame(room.id, players);
   };
 
@@ -388,7 +479,6 @@ function GamePage() {
   const winningSet = new Set<string>(((state.winning_cells as [number, number][]) || []).map(([r, c]) => `${r},${c}`));
   const order = (room.turn_order || []) as string[];
 
-  // Live countdown for disconnected player
   const dcPlayer = state.disconnected_player_id
     ? players.find((p) => p.id === state.disconnected_player_id) || null
     : null;
@@ -396,7 +486,6 @@ function GamePage() {
     ? Math.max(0, Math.ceil((new Date(state.disconnect_deadline).getTime() - Date.now()) / 1000))
     : 0;
 
-  // Forfeit detection for game-over dialog
   const redIds = players.filter((p) => p.team === "red").map((p) => p.id);
   const blueIds = players.filter((p) => p.team === "blue").map((p) => p.id);
   const redForfeit = redIds.length > 0 && redIds.every((id) => abandoned.has(id));
@@ -408,7 +497,7 @@ function GamePage() {
       <div className="max-w-5xl mx-auto px-3 py-4 md:py-6">
         <div className="flex items-center justify-between mb-3">
           <button onClick={() => navigate({ to: "/" })} className="text-xs text-muted-foreground hover:text-foreground">
-            ← Leave
+            Leave
           </button>
           <div className="text-xs text-muted-foreground">Room <span className="font-mono">{upperCode}</span></div>
         </div>
@@ -421,11 +510,15 @@ function GamePage() {
         )}
         {abandoned.size > 0 && !dcPlayer && !state.winner && (
           <div className="mb-3 p-2 rounded-md border border-border bg-secondary/40 text-xs text-muted-foreground text-center">
-            {players
-              .filter((p) => abandoned.has(p.id))
-              .map((p) => p.nickname)
-              .join(", ")}{" "}
+            {players.filter((p) => abandoned.has(p.id)).map((p) => p.nickname).join(", ")}{" "}
             left — teammate plays alone.
+          </div>
+        )}
+
+        {/* Suggestion banner */}
+        {suggestion && isMyTurn && (
+          <div className="mb-3 p-3 rounded-md border border-blue-500/50 bg-blue-500/10 text-blue-200 text-sm text-center font-medium animate-in fade-in">
+            Teammate suggests <span className="font-bold">column {suggestion.col + 1}</span>
           </div>
         )}
 
@@ -451,10 +544,7 @@ function GamePage() {
                   }}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: p.team === "red" ? "#ef4444" : "#3b82f6" }}
-                    />
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.team === "red" ? "#ef4444" : "#3b82f6" }} />
                     <div className="text-xs sm:text-sm font-medium truncate">{p.nickname}</div>
                     {isDisconnected && <span className="text-xs">⏳</span>}
                     {isAbandoned && <span className="text-xs">🚪</span>}
@@ -480,8 +570,21 @@ function GamePage() {
         <div className="mt-4 flex justify-center">
           <div
             className="p-2 sm:p-3 rounded-xl"
-            style={{ backgroundColor: "#1e1e4a", boxShadow: "0 12px 40px rgba(168,85,247,0.25)" }}
+            style={{ backgroundColor: "#1e1e4a", boxShadow: "0 12px 40px rgba(59,130,246,0.2)" }}
           >
+            {/* Column headers — show suggestion glow */}
+            <div className="grid mb-1" style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gap: "6px" }}>
+              {Array.from({ length: COLS }).map((_, c) => {
+                const isSuggested = suggestion && isMyTurn && suggestion.col === c;
+                return (
+                  <div key={c} className="flex items-center justify-center h-2">
+                    {isSuggested && (
+                      <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" style={{ boxShadow: "0 0 8px #3b82f6" }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
             <div className="grid" style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gap: "6px" }}>
               {Array.from({ length: ROWS * COLS }).map((_, idx) => {
                 const r = Math.floor(idx / COLS);
@@ -489,19 +592,23 @@ function GamePage() {
                 const cell = board[r]?.[c];
                 const isWin = winningSet.has(`${r},${c}`);
                 const justDropped = lastDrop && lastDrop.row === r && lastDrop.col === c;
+                const isSuggestedCol = suggestion && isMyTurn && suggestion.col === c;
                 return (
                   <button
                     key={`${r}-${c}`}
                     onClick={() => handleDrop(c)}
                     disabled={!isMyTurn}
-                    className="relative aspect-square rounded-full bg-[#0f0f1a] flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 md:w-14 md:h-14 transition hover:bg-[#191932] disabled:cursor-not-allowed"
+                    className={`relative aspect-square rounded-full flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 md:w-14 md:h-14 transition disabled:cursor-not-allowed ${
+                      isSuggestedCol && !cell ? "bg-blue-900/40 hover:bg-blue-900/60" : "bg-[#0f0f1a] hover:bg-[#191932]"
+                    }`}
                     aria-label={`Drop in column ${c + 1}`}
                   >
+                    {isSuggestedCol && !cell && (
+                      <div className="absolute inset-0 rounded-full border-2 border-blue-400/60 animate-pulse" />
+                    )}
                     {cell && (
                       <div
-                        className={`w-[82%] h-[82%] rounded-full ${justDropped ? "animate-piece-drop" : ""} ${
-                          isWin ? "animate-win-pulse" : ""
-                        }`}
+                        className={`w-[82%] h-[82%] rounded-full ${justDropped ? "animate-piece-drop" : ""} ${isWin ? "animate-win-pulse" : ""}`}
                         style={{
                           background: cell === "R"
                             ? "radial-gradient(circle at 30% 30%, #ff8585, #ef4444 60%, #b91c1c)"
@@ -517,8 +624,8 @@ function GamePage() {
           </div>
         </div>
 
-        {/* Turn status */}
-        <div className="text-center mt-3 text-sm">
+        {/* Turn status + suggest button */}
+        <div className="text-center mt-3 text-sm flex items-center justify-center gap-3 flex-wrap">
           {state.winner ? (
             <span className="text-muted-foreground">Game over</span>
           ) : effectivePlayer ? (
@@ -531,6 +638,17 @@ function GamePage() {
             </span>
           ) : (
             <span className="text-muted-foreground">Waiting…</span>
+          )}
+          {canSuggest && !state.winner && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+              onClick={() => setSuggestPickOpen(true)}
+            >
+              <Lightbulb className="w-3 h-3 mr-1" />
+              Suggest Move
+            </Button>
           )}
         </div>
 
@@ -591,43 +709,53 @@ function GamePage() {
                   <span style={{ color: state.winner === "red" ? "#ef4444" : "#3b82f6" }} className="font-bold">
                     {state.winner === "red" ? "Red" : "Blue"} Team
                   </span>{" "}
-                  wins! 🎉
+                  wins!
                 </span>
               )}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {forfeitTeam
-              ? "Both teammates disconnected."
-              : state.winner && state.winner !== "draw"
-              ? "Four in a row — well played."
-              : "The board is full with no winner."}
+            {forfeitTeam ? "Both teammates disconnected." : state.winner && state.winner !== "draw" ? "Four in a row — well played." : "The board is full with no winner."}
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => navigate({ to: "/" })}>
-              Back to Home
-            </Button>
-            <Button onClick={playAgain} className="bg-[#a855f7] hover:bg-[#9333ea] text-white">
-              Play Again
-            </Button>
+            <Button variant="outline" onClick={() => navigate({ to: "/" })}>Back to Home</Button>
+            <Button onClick={playAgain} className="bg-blue-600 hover:bg-blue-700 text-white">Play Again</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Shop locked dialog */}
       <Dialog open={shopOpen} onOpenChange={setShopOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Locked phrase 🔒</DialogTitle>
+            <DialogTitle>Locked phrase</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            This phrase is part of a paid pack. Visit the Shop to learn more.
-          </p>
+          <p className="text-sm text-muted-foreground">This phrase is part of a paid pack. Visit the Shop to learn more.</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShopOpen(false)}>Close</Button>
-            <Button onClick={() => navigate({ to: "/shop" })} className="bg-[#a855f7] hover:bg-[#9333ea] text-white">
-              Open Shop
-            </Button>
+            <Button onClick={() => navigate({ to: "/shop" })} className="bg-blue-600 hover:bg-blue-700 text-white">Open Shop</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Suggest move picker */}
+      <Dialog open={suggestPickOpen} onOpenChange={setSuggestPickOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Suggest a Column</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Pick a column to suggest to your teammate. Only they will see it.</p>
+          <div className="grid grid-cols-7 gap-2 mt-2">
+            {Array.from({ length: COLS }).map((_, c) => (
+              <button
+                key={c}
+                onClick={() => sendSuggestion(c)}
+                className="h-10 rounded-md bg-secondary hover:bg-blue-600 hover:text-white transition text-sm font-bold"
+              >
+                {c + 1}
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -636,7 +764,7 @@ function GamePage() {
 
 function ClockBox({ team, left, active }: { team: Team; left: number; active: boolean }) {
   const color = team === "red" ? "#ef4444" : "#3b82f6";
-  const label = team === "red" ? "🔴 Team Red" : "🔵 Team Blue";
+  const label = team === "red" ? "Team Red" : "Team Blue";
   const low = left <= 30;
   return (
     <div
