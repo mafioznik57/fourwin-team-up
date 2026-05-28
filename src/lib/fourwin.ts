@@ -203,8 +203,7 @@ export async function createRoom(nickname: string, team: Team) {
 export async function startGame(roomId: string, players: PlayerRow[]) {
   // randomize turn order across all 4 players
   const order = shuffle(players.map((p) => p.id));
-  await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
-  await supabase.from("game_state").upsert({
+  const { error: stateError } = await supabase.from("game_state").upsert({
     room_id: roomId,
     board: emptyBoard() as unknown as never,
     current_turn_index: 0,
@@ -213,13 +212,16 @@ export async function startGame(roomId: string, players: PlayerRow[]) {
     last_tick: new Date().toISOString(),
     winner: null,
     winning_cells: null,
-  });
+  }, { onConflict: "room_id" });
+  if (stateError) throw stateError;
+
+  const { error: roomError } = await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
+  if (roomError) throw roomError;
 }
 
 export async function resetGame(roomId: string, players: PlayerRow[]) {
   const order = shuffle(players.map((p) => p.id));
-  await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
-  await supabase.from("game_state").upsert({
+  const { error: stateError } = await supabase.from("game_state").upsert({
     room_id: roomId,
     board: emptyBoard() as unknown as never,
     current_turn_index: 0,
@@ -228,7 +230,11 @@ export async function resetGame(roomId: string, players: PlayerRow[]) {
     last_tick: new Date().toISOString(),
     winner: null,
     winning_cells: null,
-  });
+  }, { onConflict: "room_id" });
+  if (stateError) throw stateError;
+
+  const { error: roomError } = await supabase.from("rooms").update({ status: "playing", turn_order: order }).eq("id", roomId);
+  if (roomError) throw roomError;
 }
 
 export function formatClock(seconds: number): string {
