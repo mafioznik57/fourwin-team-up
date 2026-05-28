@@ -104,6 +104,7 @@ export type Database = {
           created_at: string
           id: string
           nickname: string
+          ready: boolean
           room_id: string
           slot_number: number
           team: string
@@ -114,6 +115,7 @@ export type Database = {
           created_at?: string
           id?: string
           nickname: string
+          ready?: boolean
           room_id: string
           slot_number: number
           team: string
@@ -124,6 +126,7 @@ export type Database = {
           created_at?: string
           id?: string
           nickname?: string
+          ready?: boolean
           room_id?: string
           slot_number?: number
           team?: string
