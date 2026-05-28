@@ -78,31 +78,51 @@ function RoomLobby() {
         if (mine) setMe(mine as PlayerRow);
 
         // Auto-start when all 4 players are ready
-        if (
-          ps &&
-          ps.length === 4 &&
-          ps.every((p) => p.ready) &&
-          room.status === "waiting"
-        ) {
-          try {
-            await startGame(room.id, ps as PlayerRow[]);
-          } catch {
-            // another client likely started it; ignore
+        if (ps && ps.length === 4 && ps.every((p) => p.ready)) {
+          // Re-check current room status from DB to avoid stale closure
+          const { data: freshRoom } = await supabase
+            .from("rooms")
+            .select("status")
+            .eq("id", room.id)
+            .maybeSingle();
+          if (freshRoom?.status === "waiting") {
+            try {
+              await startGame(room.id, ps as PlayerRow[]);
+            } catch (e) {
+              console.warn("startGame failed (likely race):", e);
+            }
           }
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` }, (payload) => {
         const updated = payload.new as RoomRow;
         setRoom(updated);
-        if (updated.status === "playing") {
-          navigate({ to: "/room/$code/game", params: { code: upperCode } });
-        }
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [room, navigate, upperCode]);
+  }, [room?.id, navigate, upperCode]);
+
+  // Navigate to game whenever room becomes "playing" (covers both realtime updates
+  // and the case where the player joins a room that's already started).
+  useEffect(() => {
+    if (room?.status === "playing" && me) {
+      navigate({ to: "/room/$code/game", params: { code: upperCode } });
+    }
+  }, [room?.status, me, navigate, upperCode]);
+
+  // Safety net: poll room status every 2s in case Realtime drops the UPDATE event.
+  useEffect(() => {
+    if (!room || room.status !== "waiting") return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from("rooms").select("*").eq("id", room.id).maybeSingle();
+      if (data && data.status !== room.status) {
+        setRoom(data as RoomRow);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [room?.id, room?.status]);
 
   const join = async () => {
     if (!nick.trim()) {
