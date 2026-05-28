@@ -9,18 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as CreateRouteImport } from './routes/create'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as ShopRouteImport } from './routes/shop'
-import { Route as ProfileSetupRouteImport } from './routes/profile.setup'
+import { Route as CreateRouteImport } from './routes/create'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
-import { Route as ProfileIndexRouteImport } from './routes/profile.index'
 import { Route as RoomCodeGameRouteImport } from './routes/room.$code.game'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ShopRoute = ShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreateRoute = CreateRouteImport.update({
@@ -28,29 +25,14 @@ const CreateRoute = CreateRouteImport.update({
   path: '/create',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShopRoute = ShopRouteImport.update({
-  id: '/shop',
-  path: '/shop',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileSetupRoute = ProfileSetupRouteImport.update({
-  id: '/profile/setup',
-  path: '/profile/setup',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoomCodeRoute = RoomCodeRouteImport.update({
   id: '/room/$code',
   path: '/room/$code',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileIndexRoute = ProfileIndexRouteImport.update({
-  id: '/profile/',
-  path: '/profile/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoomCodeGameRoute = RoomCodeGameRouteImport.update({
@@ -62,84 +44,53 @@ const RoomCodeGameRoute = RoomCodeGameRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
-  '/profile/setup': typeof ProfileSetupRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
-  '/profile/': typeof ProfileIndexRoute
   '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
-  '/profile/setup': typeof ProfileSetupRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
-  '/profile': typeof ProfileIndexRoute
   '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
-  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
-  '/profile/setup': typeof ProfileSetupRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
-  '/profile/': typeof ProfileIndexRoute
   '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/create'
-    | '/login'
-    | '/shop'
-    | '/profile/setup'
-    | '/room/$code'
-    | '/profile/'
-    | '/room/$code/game'
+  fullPaths: '/' | '/create' | '/shop' | '/room/$code' | '/room/$code/game'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/create'
-    | '/login'
-    | '/shop'
-    | '/profile/setup'
-    | '/room/$code'
-    | '/profile'
-    | '/room/$code/game'
+  to: '/' | '/create' | '/shop' | '/room/$code' | '/room/$code/game'
   id:
     | '__root__'
     | '/'
     | '/create'
-    | '/login'
     | '/shop'
-    | '/profile/setup'
     | '/room/$code'
-    | '/profile/'
     | '/room/$code/game'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
-  LoginRoute: typeof LoginRoute
   ShopRoute: typeof ShopRoute
-  ProfileSetupRoute: typeof ProfileSetupRoute
   RoomCodeRoute: typeof RoomCodeRouteWithChildren
-  ProfileIndexRoute: typeof ProfileIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/shop': {
+      id: '/shop'
+      path: '/shop'
+      fullPath: '/shop'
+      preLoaderRoute: typeof ShopRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/create': {
@@ -149,25 +100,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CreateRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shop': {
-      id: '/shop'
-      path: '/shop'
-      fullPath: '/shop'
-      preLoaderRoute: typeof ShopRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile/setup': {
-      id: '/profile/setup'
-      path: '/profile/setup'
-      fullPath: '/profile/setup'
-      preLoaderRoute: typeof ProfileSetupRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/room/$code': {
@@ -175,13 +112,6 @@ declare module '@tanstack/react-router' {
       path: '/room/$code'
       fullPath: '/room/$code'
       preLoaderRoute: typeof RoomCodeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile/': {
-      id: '/profile/'
-      path: '/profile'
-      fullPath: '/profile/'
-      preLoaderRoute: typeof ProfileIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/room/$code/game': {
@@ -209,22 +139,9 @@ const RoomCodeRouteWithChildren = RoomCodeRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
-  LoginRoute: LoginRoute,
   ShopRoute: ShopRoute,
-  ProfileSetupRoute: ProfileSetupRoute,
   RoomCodeRoute: RoomCodeRouteWithChildren,
-  ProfileIndexRoute: ProfileIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
