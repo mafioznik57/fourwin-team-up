@@ -15,7 +15,7 @@ import {
   type Team,
 } from "@/lib/fourwin";
 import { toast } from "sonner";
-import { Copy, Link as LinkIcon } from "lucide-react";
+import { Copy, Link as LinkIcon, Check, Hourglass } from "lucide-react";
 
 export const Route = createFileRoute("/room/$code")({
   head: () => ({ meta: [{ title: "Room — FourWin" }] }),
@@ -66,12 +66,30 @@ function RoomLobby() {
     if (!room) return;
     const channel = supabase
       .channel(`lobby:${room.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` }, async () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` }, async (payload) => {
+        // If a player left, reset ready status for everyone remaining
+        if (payload.eventType === "DELETE") {
+          await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
+        }
         const { data: ps } = await supabase.from("players").select("*").eq("room_id", room.id).order("slot_number");
         setPlayers((ps || []) as PlayerRow[]);
         const clientId = getClientId();
         const mine = (ps || []).find((p) => p.client_id === clientId);
         if (mine) setMe(mine as PlayerRow);
+
+        // Auto-start when all 4 players are ready
+        if (
+          ps &&
+          ps.length === 4 &&
+          ps.every((p) => p.ready) &&
+          room.status === "waiting"
+        ) {
+          try {
+            await startGame(room.id, ps as PlayerRow[]);
+          } catch {
+            // another client likely started it; ignore
+          }
+        }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` }, (payload) => {
         const updated = payload.new as RoomRow;
@@ -114,18 +132,18 @@ function RoomLobby() {
     const base = team === "red" ? 0 : 2;
     const usedSlots = new Set(players.filter((p) => p.id !== me.id).map((p) => p.slot_number));
     const slotNumber = !usedSlots.has(base) ? base : base + 1;
-    const { error } = await supabase.from("players").update({ team, slot_number: slotNumber }).eq("id", me.id);
+    // Switching team resets ready for everyone
+    const { error } = await supabase.from("players").update({ team, slot_number: slotNumber, ready: false }).eq("id", me.id);
+    if (!error && room) {
+      await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
+    }
     if (error) toast.error(error.message);
   };
 
-  const onStart = async () => {
-    if (!room) return;
-    if (players.length !== 4) return;
-    try {
-      await startGame(room.id, players);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
+  const toggleReady = async () => {
+    if (!me) return;
+    const { error } = await supabase.from("players").update({ ready: !me.ready }).eq("id", me.id);
+    if (error) toast.error(error.message);
   };
 
   const copyLink = () => {
@@ -203,17 +221,26 @@ function RoomLobby() {
         </div>
 
         <div className="mt-6 flex flex-col items-center gap-2">
-          <Button
-            size="lg"
-            disabled={players.length !== 4 || !me}
-            onClick={onStart}
-            className="bg-[#a855f7] hover:bg-[#9333ea] text-white w-full sm:w-auto"
-          >
-            {players.length === 4 ? "Start Game" : `Waiting for players (${players.length}/4)`}
-          </Button>
-          {players.length === 4 && (
-            <p className="text-xs text-muted-foreground">Turn order will be randomized.</p>
-          )}
+          {me ? (
+            <Button
+              size="lg"
+              onClick={toggleReady}
+              className={
+                me.ready
+                  ? "bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
+                  : "bg-[#a855f7] hover:bg-[#9333ea] text-white w-full sm:w-auto"
+              }
+            >
+              {me.ready ? "✅ Ready — Click to cancel" : "Click when ready"}
+            </Button>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            {players.length < 4
+              ? `Waiting for players (${players.length}/4)`
+              : players.every((p) => p.ready)
+              ? "Starting game…"
+              : `Ready: ${players.filter((p) => p.ready).length}/4`}
+          </p>
         </div>
       </div>
     </div>
@@ -257,6 +284,15 @@ function TeamPanel({
                   <div className="flex-1 truncate">
                     {p.nickname} {me?.id === p.id && <span className="text-xs text-muted-foreground">(you)</span>}
                   </div>
+                  {p.ready ? (
+                    <span className="flex items-center gap-1 text-xs font-semibold text-green-500">
+                      <Check className="w-4 h-4" /> Ready
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Hourglass className="w-3.5 h-3.5" /> Waiting
+                    </span>
+                  )}
                 </>
               ) : (
                 <div className="text-sm text-muted-foreground italic">Empty slot</div>
