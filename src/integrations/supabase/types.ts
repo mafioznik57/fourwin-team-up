@@ -150,6 +150,39 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_id: number
+          created_at: string
+          draws: number
+          elo_rating: number
+          id: string
+          losses: number
+          nickname: string
+          wins: number
+        }
+        Insert: {
+          avatar_id?: number
+          created_at?: string
+          draws?: number
+          elo_rating?: number
+          id: string
+          losses?: number
+          nickname: string
+          wins?: number
+        }
+        Update: {
+          avatar_id?: number
+          created_at?: string
+          draws?: number
+          elo_rating?: number
+          id?: string
+          losses?: number
+          nickname?: string
+          wins?: number
+        }
+        Relationships: []
+      }
       rooms: {
         Row: {
           code: string
