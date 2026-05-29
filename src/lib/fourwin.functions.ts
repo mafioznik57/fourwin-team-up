@@ -65,6 +65,17 @@ async function loadPlayers(roomId: string): Promise<PlayerLite[]> {
   return (data || []) as PlayerLite[];
 }
 
+async function getProfileNickname(userId: string): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("nickname")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) dbFail(error);
+  if (!data?.nickname) throw new Error("Profile not found. Please sign in again.");
+  return data.nickname as string;
+}
+
 async function startNewRound(roomId: string, players: PlayerLite[]) {
   const order = shuffle(players.map((p) => p.id));
   const { error: stateErr } = await supabaseAdmin.from("game_state").upsert(
@@ -98,10 +109,11 @@ async function startNewRound(roomId: string, players: PlayerLite[]) {
 export const createRoomFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ nickname: nickSchema, team: teamSchema }).parse(input),
+    z.object({ team: teamSchema }).parse(input),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const nickname = await getProfileNickname(userId);
     for (let i = 0; i < 5; i++) {
       const code = genRoomCode();
       const { data: room, error } = await supabaseAdmin
@@ -114,7 +126,7 @@ export const createRoomFn = createServerFn({ method: "POST" })
       const { error: pErr } = await supabaseAdmin.from("players").insert({
         room_id: room.id,
         user_id: userId,
-        nickname: data.nickname,
+        nickname,
         team: data.team,
         slot_number: slot,
       });
@@ -133,13 +145,13 @@ export const joinRoomFn = createServerFn({ method: "POST" })
     z
       .object({
         code: codeSchema,
-        nickname: nickSchema,
         preferredTeam: teamSchema.optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const nickname = await getProfileNickname(userId);
     const { data: room, error: roomErr } = await supabaseAdmin
       .from("rooms")
       .select("id, code, status")
@@ -171,7 +183,7 @@ export const joinRoomFn = createServerFn({ method: "POST" })
       .insert({
         room_id: room.id,
         user_id: userId,
-        nickname: data.nickname,
+        nickname,
         team,
         slot_number: slot,
       })
