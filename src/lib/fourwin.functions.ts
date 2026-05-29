@@ -24,8 +24,6 @@ function dbFail(err: { message?: string; code?: string } | null | undefined): ne
 }
 
 
-const NICK_RE = /^[\p{L}\p{N} _\-.!?]{1,16}$/u;
-const nickSchema = z.string().trim().min(1).max(16).regex(NICK_RE);
 const teamSchema = z.enum(["red", "blue"]);
 const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6}$/);
 const uuidSchema = z.string().uuid();
