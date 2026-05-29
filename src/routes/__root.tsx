@@ -7,9 +7,11 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 function NotFoundComponent() {
   return (
@@ -74,18 +76,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "FourWin" },
-      { name: "description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your 
-teammate, beat the chess clock, win together." },
+      { name: "description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your teammate, beat the chess clock, win together." },
       { name: "author", content: "Lovable" },
       { property: "og:title", content: "FourWin" },
-      { property: "og:description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your 
-teammate, beat the chess clock, win together." },
+      { property: "og:description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your teammate, beat the chess clock, win together." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "FourWin" },
-      { name: "twitter:description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your 
-teammate, beat the chess clock, win together." },
+      { name: "twitter:description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your teammate, beat the chess clock, win together." },
       { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f84a947d-f6be-472f-8ccf-f253318fa889/id-preview-36f4fe56--58964efd-2470-42c1-9876-349e73247107.lovable.app-1779982471017.png" },
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f84a947d-f6be-472f-8ccf-f253318fa889/id-preview-36f4fe56--58964efd-2470-42c1-9876-349e73247107.lovable.app-1779982471017.png" },
     ],
@@ -118,6 +117,22 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Anonymous sign-in bootstrap: every visitor gets a real Supabase auth.uid()
+  // before any server functions or RLS-protected reads are issued.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (!data.session) {
+        await supabase.auth.signInAnonymously();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

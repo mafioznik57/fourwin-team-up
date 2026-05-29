@@ -1,19 +1,19 @@
 import { Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getClientId,
   getSavedNick,
   saveNick,
-  joinRoomByCode,
-  startGame,
   type PlayerRow,
   type RoomRow,
   type Team,
 } from "@/lib/fourwin";
+import { joinRoomFn, switchTeamFn, toggleReadyFn } from "@/lib/fourwin.functions";
+import { useUserId } from "@/hooks/use-user-id";
 import { toast } from "sonner";
 import { Copy, Link as LinkIcon, Check, Hourglass } from "lucide-react";
 
@@ -34,6 +34,11 @@ function RoomLobby() {
   const { code } = Route.useParams();
   const navigate = useNavigate();
   const upperCode = code.toUpperCase();
+
+  const userId = useUserId();
+  const joinRoom = useServerFn(joinRoomFn);
+  const switchTeamCall = useServerFn(switchTeamFn);
+  const toggleReadyCall = useServerFn(toggleReadyFn);
 
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
@@ -65,10 +70,9 @@ function RoomLobby() {
         .eq("room_id", r.id)
         .order("slot_number");
       if (cancelled) return;
-      setPlayers((ps || []) as PlayerRow[]);
-      const clientId = getClientId();
-      const mine = (ps || []).find((p) => p.client_id === clientId);
-      if (mine) setMe(mine as PlayerRow);
+      setPlayers((ps || []) as unknown as PlayerRow[]);
+      const mine = userId ? (ps || []).find((p) => p.user_id === userId) : undefined;
+      if (mine) setMe(mine as unknown as PlayerRow);
       // If game already started and I'm a player, go there.
       if (r.status === "playing" && mine) {
         navigate({ to: "/room/$code/game", params: { code: upperCode } });
@@ -77,7 +81,7 @@ function RoomLobby() {
     return () => {
       cancelled = true;
     };
-  }, [upperCode, navigate]);
+  }, [upperCode, navigate, userId]);
 
   // Realtime subscriptions for this room
   useEffect(() => {
@@ -87,37 +91,16 @@ function RoomLobby() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "players", filter: `room_id=eq.${roomId}` },
-        async (payload) => {
-          // If a player left, reset ready status for everyone remaining
-          if (payload.eventType === "DELETE") {
-            await supabase.from("players").update({ ready: false }).eq("room_id", roomId);
-          }
+        async () => {
           const { data: ps } = await supabase
             .from("players")
             .select("*")
             .eq("room_id", roomId)
             .order("slot_number");
-          setPlayers((ps || []) as PlayerRow[]);
-          const clientId = getClientId();
-          const mine = (ps || []).find((p) => p.client_id === clientId);
-          if (mine) setMe(mine as PlayerRow);
-
-          // Auto-start when all 4 players are ready
-          if (ps && ps.length === 4 && ps.every((p) => p.ready)) {
-            // Re-check current room status from DB to avoid stale closure
-            const { data: freshRoom } = await supabase
-              .from("rooms")
-              .select("status")
-              .eq("id", roomId)
-              .maybeSingle();
-            if (freshRoom?.status === "waiting") {
-              try {
-                await startGame(roomId, ps as PlayerRow[]);
-              } catch (e) {
-                console.warn("startGame failed (likely race):", e);
-              }
-            }
-          }
+          setPlayers((ps || []) as unknown as PlayerRow[]);
+          const mine = userId ? (ps || []).find((p) => p.user_id === userId) : undefined;
+          if (mine) setMe(mine as unknown as PlayerRow);
+          // Auto-start when all 4 ready is now handled server-side inside toggleReadyFn.
         },
       )
       .on(
@@ -132,7 +115,7 @@ function RoomLobby() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomId]);
+  }, [roomId, userId]);
 
   // Navigate to game whenever room becomes "playing" (covers both realtime updates
   // and the case where the player joins a room that's already started).
@@ -162,9 +145,8 @@ function RoomLobby() {
     setJoining(true);
     try {
       saveNick(nick.trim());
-      const { player } = await joinRoomByCode(upperCode, nick.trim());
-      setMe(player as PlayerRow);
-      toast.success(`Joined ${player.team} team`);
+      await joinRoom({ data: { code: upperCode, nickname: nick.trim() } });
+      toast.success("Joined room");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -173,30 +155,21 @@ function RoomLobby() {
   };
 
   const switchTeam = async (team: Team) => {
-    if (!me) return;
-    const sameTeamCount = players.filter((p) => p.team === team && p.id !== me.id).length;
-    if (sameTeamCount >= 2) {
-      toast.error("That team is full");
-      return;
+    if (!me || !roomId) return;
+    try {
+      await switchTeamCall({ data: { roomId, team } });
+    } catch (e) {
+      toast.error((e as Error).message);
     }
-    const base = team === "red" ? 0 : 2;
-    const usedSlots = new Set(players.filter((p) => p.id !== me.id).map((p) => p.slot_number));
-    const slotNumber = !usedSlots.has(base) ? base : base + 1;
-    // Switching team resets ready for everyone
-    const { error } = await supabase
-      .from("players")
-      .update({ team, slot_number: slotNumber, ready: false })
-      .eq("id", me.id);
-    if (!error && room) {
-      await supabase.from("players").update({ ready: false }).eq("room_id", room.id);
-    }
-    if (error) toast.error(error.message);
   };
 
   const toggleReady = async () => {
-    if (!me) return;
-    const { error } = await supabase.from("players").update({ ready: !me.ready }).eq("id", me.id);
-    if (error) toast.error(error.message);
+    if (!me || !roomId) return;
+    try {
+      await toggleReadyCall({ data: { roomId } });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
 
   const copyLink = () => {

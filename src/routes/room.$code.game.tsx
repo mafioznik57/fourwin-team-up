@@ -1,22 +1,28 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import {
   COLS,
   ROWS,
-  checkWin,
-  dropPiece,
   emptyBoard,
   formatClock,
-  getClientId,
-  isBoardFull,
-  resetGame,
   type Board,
   type GameStateRow,
   type PlayerRow,
   type RoomRow,
   type Team,
 } from "@/lib/fourwin";
+import {
+  makeMoveFn,
+  reportTimeoutFn,
+  sendChatFn,
+  playAgainFn,
+  reportDisconnectFn,
+  clearDisconnectFn,
+  markAbandonedFn,
+} from "@/lib/fourwin.functions";
+import { useUserId } from "@/hooks/use-user-id";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -50,6 +56,15 @@ function GamePage() {
   const navigate = useNavigate();
   const upperCode = code.toUpperCase();
 
+  const userId = useUserId();
+  const makeMove = useServerFn(makeMoveFn);
+  const reportTimeout = useServerFn(reportTimeoutFn);
+  const sendChatCall = useServerFn(sendChatFn);
+  const playAgainCall = useServerFn(playAgainFn);
+  const reportDisconnect = useServerFn(reportDisconnectFn);
+  const clearDisconnect = useServerFn(clearDisconnectFn);
+  const markAbandoned = useServerFn(markAbandonedFn);
+
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [state, setState] = useState<GameStateRow | null>(null);
@@ -59,7 +74,10 @@ function GamePage() {
   const [shopOpen, setShopOpen] = useState(false);
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
 
-  const me = useMemo(() => players.find((p) => p.client_id === getClientId()) || null, [players]);
+  const me = useMemo(
+    () => (userId ? players.find((p) => p.user_id === userId) || null : null),
+    [players, userId],
+  );
 
   // Load room + players + state
   useEffect(() => {
@@ -74,7 +92,7 @@ function GamePage() {
         supabase.from("chat_messages").select("*").eq("room_id", r.id).order("created_at").limit(50),
       ]);
       if (cancelled) return;
-      setPlayers((ps || []) as PlayerRow[]);
+      setPlayers((ps || []) as unknown as PlayerRow[]);
       if (gs) setState(gs as unknown as GameStateRow);
       setChats((cs || []) as ChatRow[]);
     })();
@@ -90,7 +108,7 @@ function GamePage() {
       .channel(`game:${room.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `room_id=eq.${room.id}` }, async () => {
         const { data } = await supabase.from("players").select("*").eq("room_id", room.id).order("slot_number");
-        setPlayers((data || []) as PlayerRow[]);
+        setPlayers((data || []) as unknown as PlayerRow[]);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "game_state", filter: `room_id=eq.${room.id}` }, (payload) => {
         const next = payload.new as unknown as GameStateRow;
@@ -221,17 +239,9 @@ function GamePage() {
     const left = currentTeam === "red" ? redLeft : blueLeft;
     if (left <= 0 && !timeoutCommittedRef.current) {
       timeoutCommittedRef.current = true;
-      const winner = currentTeam === "red" ? "blue" : "red";
-      supabase
-        .from("game_state")
-        .update({
-          winner,
-          red_time_left: Math.max(0, Math.floor(currentTeam === "red" ? 0 : redLeft)),
-          blue_time_left: Math.max(0, Math.floor(currentTeam === "blue" ? 0 : blueLeft)),
-        })
-        .eq("room_id", state.room_id);
+      reportTimeout({ data: { roomId: state.room_id } }).catch(() => {});
     }
-  }, [redLeft, blueLeft, currentTeam, currentPlayerId, me, state]);
+  }, [redLeft, blueLeft, currentTeam, currentPlayerId, me, state, reportTimeout]);
 
   const isMyTurn = !!me && effectivePlayerId === me?.id && !state?.winner;
 
@@ -243,49 +253,18 @@ function GamePage() {
       const now = Date.now();
       const roomId = state.room_id;
 
-      // 1) Forfeit check: both members of a team abandoned -> other team wins.
-      const redIds = players.filter((p) => p.team === "red").map((p) => p.id);
-      const blueIds = players.filter((p) => p.team === "blue").map((p) => p.id);
-      const redOut = redIds.length > 0 && redIds.every((id) => abandoned.has(id));
-      const blueOut = blueIds.length > 0 && blueIds.every((id) => abandoned.has(id));
-      if (redOut || blueOut) {
-        const winner = redOut ? "blue" : "red";
-        await supabase
-          .from("game_state")
-          .update({ winner } as never)
-          .eq("room_id", roomId)
-          .is("winner", null);
-        return;
-      }
-
       // 2) If someone is flagged disconnected:
       if (state.disconnected_player_id && state.disconnect_deadline) {
         const deadline = new Date(state.disconnect_deadline).getTime();
         const dcId = state.disconnected_player_id;
         // a) Reconnected before deadline -> clear flag.
         if (presentIds.has(dcId) && now < deadline) {
-          await supabase
-            .from("game_state")
-            .update({
-              disconnected_player_id: null,
-              disconnect_deadline: null,
-            } as never)
-            .eq("room_id", roomId)
-            .eq("disconnected_player_id", dcId);
+          await clearDisconnect({ data: { roomId, playerId: dcId } }).catch(() => {});
           return;
         }
         // b) Deadline passed and still gone -> mark abandoned.
         if (now >= deadline && !presentIds.has(dcId)) {
-          const nextAbandoned = Array.from(new Set([...(state.abandoned_player_ids || []), dcId]));
-          await supabase
-            .from("game_state")
-            .update({
-              disconnected_player_id: null,
-              disconnect_deadline: null,
-              abandoned_player_ids: nextAbandoned as unknown as never,
-            } as never)
-            .eq("room_id", roomId)
-            .eq("disconnected_player_id", dcId);
+          await markAbandoned({ data: { roomId, playerId: dcId } }).catch(() => {});
           const p = players.find((x) => x.id === dcId);
           if (p) toast(`${p.nickname} left. Their teammate will play alone.`);
           return;
@@ -302,23 +281,14 @@ function GamePage() {
             continue;
           }
           if (now - lastSeen >= 5000) {
-            const deadline = new Date(now + 30_000).toISOString();
-            await supabase
-              .from("game_state")
-              .update({
-                disconnected_player_id: p.id,
-                disconnect_deadline: deadline,
-              } as never)
-              .eq("room_id", roomId)
-              .is("disconnected_player_id", null)
-              .is("winner", null);
+            await reportDisconnect({ data: { roomId, playerId: p.id } }).catch(() => {});
             break;
           }
         }
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [state, room, me, players, presentIds, abandoned]);
+  }, [state, room, me, players, presentIds, abandoned, reportDisconnect, clearDisconnect, markAbandoned]);
 
   const handleDrop = useCallback(
     async (col: number) => {
@@ -327,53 +297,23 @@ function GamePage() {
         toast.error("Not your turn");
         return;
       }
-      const piece = currentTeam === "red" ? "R" : "B";
-      const result = dropPiece(state.board as Board, col, piece);
-      if (!result) {
-        toast.error("Column is full");
-        return;
+      try {
+        await makeMove({ data: { roomId: state.room_id, col } });
+      } catch (e) {
+        toast.error((e as Error).message);
       }
-      // Update clocks: subtract elapsed from current team
-      const elapsed = (Date.now() - new Date(state.last_tick).getTime()) / 1000;
-      const newRed = currentTeam === "red" ? Math.max(0, state.red_time_left - elapsed) : state.red_time_left;
-      const newBlue = currentTeam === "blue" ? Math.max(0, state.blue_time_left - elapsed) : state.blue_time_left;
-
-      const win = checkWin(result.board);
-      const draw = !win && isBoardFull(result.board);
-      const order = (room?.turn_order || []) as string[];
-      const nextIndex = (state.current_turn_index + 1) % Math.max(order.length, 1);
-
-      setLastDrop({ row: result.row, col });
-      const update: Partial<GameStateRow> & { board: Board } = {
-        board: result.board,
-        current_turn_index: nextIndex,
-        red_time_left: Math.floor(newRed),
-        blue_time_left: Math.floor(newBlue),
-        last_tick: new Date().toISOString() as unknown as string,
-      };
-      if (win) {
-        update.winner = win.winner === "R" ? "red" : "blue";
-        update.winning_cells = win.cells;
-      } else if (draw) {
-        update.winner = "draw";
-      }
-      const { error } = await supabase
-        .from("game_state")
-        .update(update as never)
-        .eq("room_id", state.room_id);
-      if (error) toast.error(error.message);
     },
-    [state, me, currentTeam, isMyTurn, room],
+    [state, me, currentTeam, isMyTurn, makeMove],
   );
 
   const sendChat = async (msg: string) => {
     if (!me || !room) return;
-    await supabase.from("chat_messages").insert({ room_id: room.id, player_id: me.id, message: msg });
+    await sendChatCall({ data: { roomId: room.id, message: msg } }).catch(() => {});
   };
 
   const playAgain = async () => {
     if (!room) return;
-    await resetGame(room.id, players);
+    await playAgainCall({ data: { roomId: room.id } }).catch((e) => toast.error((e as Error).message));
   };
 
   if (!room || !state) {

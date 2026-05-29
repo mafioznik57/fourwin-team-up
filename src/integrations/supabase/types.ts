@@ -108,7 +108,6 @@ export type Database = {
       }
       players: {
         Row: {
-          client_id: string
           connected: boolean
           created_at: string
           id: string
@@ -117,9 +116,9 @@ export type Database = {
           room_id: string
           slot_number: number
           team: string
+          user_id: string
         }
         Insert: {
-          client_id: string
           connected?: boolean
           created_at?: string
           id?: string
@@ -128,9 +127,9 @@ export type Database = {
           room_id: string
           slot_number: number
           team: string
+          user_id: string
         }
         Update: {
-          client_id?: string
           connected?: boolean
           created_at?: string
           id?: string
@@ -139,6 +138,7 @@ export type Database = {
           room_id?: string
           slot_number?: number
           team?: string
+          user_id?: string
         }
         Relationships: [
           {
