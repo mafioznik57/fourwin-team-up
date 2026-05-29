@@ -117,22 +117,17 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
 
-  // Anonymous sign-in bootstrap: every visitor gets a real Supabase auth.uid()
-  // before any server functions or RLS-protected reads are issued.
+  // Invalidate router + query cache when auth state changes so protected
+  // routes refetch with the right session.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (!data.session) {
-        await supabase.auth.signInAnonymously();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      router.invalidate();
+      queryClient.invalidateQueries();
+    });
+    return () => subscription.unsubscribe();
+  }, [router, queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
