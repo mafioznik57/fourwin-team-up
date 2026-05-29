@@ -85,8 +85,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "FourWin" },
       { name: "twitter:description", content: "FourWin is a real-time 2v2 team Connect Four — coordinate with your teammate, beat the chess clock, win together." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f84a947d-f6be-472f-8ccf-f253318fa889/id-preview-36f4fe56--58964efd-2470-42c1-9876-349e73247107.lovable.app-1779982471017.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f84a947d-f6be-472f-8ccf-f253318fa889/id-preview-36f4fe56--58964efd-2470-42c1-9876-349e73247107.lovable.app-1779982471017.png" },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/f17ccc2a-91cb-4a50-a40b-f952e8817212" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/f17ccc2a-91cb-4a50-a40b-f952e8817212" },
     ],
     links: [
       {
