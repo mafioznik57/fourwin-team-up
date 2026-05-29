@@ -1,13 +1,10 @@
-import { Outlet, createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getSavedNick,
-  saveNick,
   type PlayerRow,
   type RoomRow,
   type Team,
@@ -19,6 +16,10 @@ import { Copy, Link as LinkIcon, Check, Hourglass } from "lucide-react";
 
 export const Route = createFileRoute("/room/$code")({
   head: () => ({ meta: [{ title: "Room — FourWin" }] }),
+  beforeLoad: async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) throw redirect({ to: "/login" });
+  },
   component: RoomRoute,
 });
 
@@ -42,7 +43,6 @@ function RoomLobby() {
 
   const [room, setRoom] = useState<RoomRow | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
-  const [nick, setNick] = useState(getSavedNick());
   const [joining, setJoining] = useState(false);
   const [me, setMe] = useState<PlayerRow | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -138,14 +138,9 @@ function RoomLobby() {
   }, [roomId, roomStatus]);
 
   const join = async () => {
-    if (!nick.trim()) {
-      toast.error("Enter a nickname");
-      return;
-    }
     setJoining(true);
     try {
-      saveNick(nick.trim());
-      await joinRoom({ data: { code: upperCode, nickname: nick.trim() } });
+      await joinRoom({ data: { code: upperCode } });
       toast.success("Joined room");
     } catch (e) {
       toast.error((e as Error).message);
@@ -153,6 +148,15 @@ function RoomLobby() {
       setJoining(false);
     }
   };
+
+  // Auto-join the lobby once we know we're authenticated and not already in it.
+  useEffect(() => {
+    if (!userId || !roomId || me || joining || notFound) return;
+    if (roomStatus !== "waiting") return;
+    if (players.length >= 4) return;
+    void join();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, roomId, me, roomStatus, players.length, notFound]);
 
   const switchTeam = async (team: Team) => {
     if (!me || !roomId) return;
