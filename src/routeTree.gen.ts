@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShopRouteImport } from './routes/shop'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RoomCodeRouteImport } from './routes/room.$code'
@@ -18,6 +19,11 @@ import { Route as RoomCodeGameRouteImport } from './routes/room.$code.game'
 const ShopRoute = ShopRouteImport.update({
   id: '/shop',
   path: '/shop',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreateRoute = CreateRouteImport.update({
@@ -44,6 +50,7 @@ const RoomCodeGameRoute = RoomCodeGameRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
@@ -59,19 +67,27 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
+  '/login': typeof LoginRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/shop' | '/room/$code' | '/room/$code/game'
+  fullPaths:
+    | '/'
+    | '/create'
+    | '/login'
+    | '/shop'
+    | '/room/$code'
+    | '/room/$code/game'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/shop' | '/room/$code' | '/room/$code/game'
+  to: '/' | '/create' | '/login' | '/shop' | '/room/$code' | '/room/$code/game'
   id:
     | '__root__'
     | '/'
     | '/create'
+    | '/login'
     | '/shop'
     | '/room/$code'
     | '/room/$code/game'
@@ -80,6 +96,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
+  LoginRoute: typeof LoginRoute
   ShopRoute: typeof ShopRoute
   RoomCodeRoute: typeof RoomCodeRouteWithChildren
 }
@@ -91,6 +108,13 @@ declare module '@tanstack/react-router' {
       path: '/shop'
       fullPath: '/shop'
       preLoaderRoute: typeof ShopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/create': {
@@ -139,9 +163,20 @@ const RoomCodeRouteWithChildren = RoomCodeRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
+  LoginRoute: LoginRoute,
   ShopRoute: ShopRoute,
   RoomCodeRoute: RoomCodeRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
