@@ -1,9 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { createRoom, getSavedNick, saveNick, type Team } from "@/lib/fourwin";
+import { getSavedNick, saveNick, type Team } from "@/lib/fourwin";
+import { createRoomFn } from "@/lib/fourwin.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
@@ -16,6 +18,7 @@ function CreatePage() {
   const [nick, setNick] = useState(getSavedNick());
   const [team, setTeam] = useState<Team>("red");
   const [loading, setLoading] = useState(false);
+  const createRoomCall = useServerFn(createRoomFn);
 
   const submit = async () => {
     if (!nick.trim()) {
@@ -25,8 +28,8 @@ function CreatePage() {
     setLoading(true);
     try {
       saveNick(nick.trim());
-      const { room } = await createRoom(nick.trim(), team);
-      navigate({ to: "/room/$code", params: { code: room.code } });
+      const { code } = await createRoomCall({ data: { nickname: nick.trim(), team } });
+      navigate({ to: "/room/$code", params: { code } });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
