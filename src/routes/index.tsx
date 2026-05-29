@@ -1,10 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Trophy, Globe2, Target, Sparkles, Users } from "lucide-react";
+import { SiteHeader } from "@/components/site-header";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,15 +26,7 @@ function Landing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2 font-bold text-xl">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#ef4444] to-[#3b82f6]" />
-          FourWin
-        </div>
-        <Link to="/shop" className="text-sm text-muted-foreground hover:text-foreground transition">
-          Shop
-        </Link>
-      </header>
+      <SiteHeader />
 
       <main className="px-6 max-w-6xl mx-auto">
         <section className="text-center py-16 md:py-24">
