@@ -240,22 +240,13 @@ function RoomLobby() {
 
           {!me ? (
             <div className="mt-6 space-y-3">
-              <label className="text-sm font-medium">Pick your nickname</label>
-              <div className="flex gap-2">
-                <Input
-                  value={nick}
-                  onChange={(e) => setNick(e.target.value)}
-                  maxLength={16}
-                  placeholder="Your name"
-                />
-                <Button
-                  onClick={join}
-                  disabled={joining}
-                  className="bg-[#a855f7] hover:bg-[#9333ea] text-white"
-                >
-                  {joining ? "Joining…" : "Join"}
-                </Button>
-              </div>
+              <Button
+                onClick={join}
+                disabled={joining}
+                className="w-full bg-[#a855f7] hover:bg-[#9333ea] text-white"
+              >
+                {joining ? "Joining…" : "Join this room"}
+              </Button>
               <p className="text-xs text-muted-foreground">
                 You'll be auto-assigned to the team with fewer players.
               </p>
