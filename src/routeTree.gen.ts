@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShopRouteImport } from './routes/shop'
+import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
@@ -19,6 +20,11 @@ import { Route as RoomCodeGameRouteImport } from './routes/room.$code.game'
 const ShopRoute = ShopRouteImport.update({
   id: '/shop',
   path: '/shop',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/login': typeof LoginRoute
+  '/register': typeof RegisterRoute
   '/shop': typeof ShopRoute
   '/room/$code': typeof RoomCodeRouteWithChildren
   '/room/$code/game': typeof RoomCodeGameRoute
@@ -78,16 +87,25 @@ export interface FileRouteTypes {
     | '/'
     | '/create'
     | '/login'
+    | '/register'
     | '/shop'
     | '/room/$code'
     | '/room/$code/game'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/login' | '/shop' | '/room/$code' | '/room/$code/game'
+  to:
+    | '/'
+    | '/create'
+    | '/login'
+    | '/register'
+    | '/shop'
+    | '/room/$code'
+    | '/room/$code/game'
   id:
     | '__root__'
     | '/'
     | '/create'
     | '/login'
+    | '/register'
     | '/shop'
     | '/room/$code'
     | '/room/$code/game'
@@ -97,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CreateRoute: typeof CreateRoute
   LoginRoute: typeof LoginRoute
+  RegisterRoute: typeof RegisterRoute
   ShopRoute: typeof ShopRoute
   RoomCodeRoute: typeof RoomCodeRouteWithChildren
 }
@@ -108,6 +127,13 @@ declare module '@tanstack/react-router' {
       path: '/shop'
       fullPath: '/shop'
       preLoaderRoute: typeof ShopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -164,6 +190,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CreateRoute: CreateRoute,
   LoginRoute: LoginRoute,
+  RegisterRoute: RegisterRoute,
   ShopRoute: ShopRoute,
   RoomCodeRoute: RoomCodeRouteWithChildren,
 }
