@@ -17,6 +17,13 @@ import {
   type Team,
 } from "@/lib/fourwin";
 
+function dbFail(err: { message?: string; code?: string } | null | undefined): never {
+  // Log raw DB error server-side; surface a generic message to clients.
+  console.error("[fourwin] db error:", err);
+  throw new Error("Something went wrong. Please try again.");
+}
+
+
 const NICK_RE = /^[\p{L}\p{N} _\-.!?]{1,16}$/u;
 const nickSchema = z.string().trim().min(1).max(16).regex(NICK_RE);
 const teamSchema = z.enum(["red", "blue"]);
@@ -43,7 +50,7 @@ async function assertParticipant(roomId: string, userId: string): Promise<Player
     .eq("room_id", roomId)
     .eq("user_id", userId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) dbFail(error);
   if (!data) throw new Error("Not a participant of this room");
   return data as PlayerLite;
 }
@@ -54,7 +61,7 @@ async function loadPlayers(roomId: string): Promise<PlayerLite[]> {
     .select("id, room_id, user_id, team, slot_number, nickname, ready, connected")
     .eq("room_id", roomId)
     .order("slot_number");
-  if (error) throw new Error(error.message);
+  if (error) dbFail(error);
   return (data || []) as PlayerLite[];
 }
 
@@ -76,12 +83,12 @@ async function startNewRound(roomId: string, players: PlayerLite[]) {
     },
     { onConflict: "room_id" },
   );
-  if (stateErr) throw new Error(stateErr.message);
+  if (stateErr) dbFail(stateErr);
   const { error: roomErr } = await supabaseAdmin
     .from("rooms")
     .update({ status: "playing", turn_order: order as unknown as never })
     .eq("id", roomId);
-  if (roomErr) throw new Error(roomErr.message);
+  if (roomErr) dbFail(roomErr);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -113,7 +120,7 @@ export const createRoomFn = createServerFn({ method: "POST" })
       });
       if (pErr) {
         await supabaseAdmin.from("rooms").delete().eq("id", room.id);
-        throw new Error(pErr.message);
+        dbFail(pErr);
       }
       return { code: room.code as string };
     }
@@ -138,7 +145,7 @@ export const joinRoomFn = createServerFn({ method: "POST" })
       .select("id, code, status")
       .eq("code", data.code)
       .maybeSingle();
-    if (roomErr) throw new Error(roomErr.message);
+    if (roomErr) dbFail(roomErr);
     if (!room) throw new Error("Room not found");
 
     const players = await loadPlayers(room.id);
@@ -170,7 +177,7 @@ export const joinRoomFn = createServerFn({ method: "POST" })
       })
       .select("id")
       .single();
-    if (insErr) throw new Error(insErr.message);
+    if (insErr) dbFail(insErr);
 
     // New player joined a lobby — reset everyone's ready flag.
     await supabaseAdmin
@@ -205,7 +212,7 @@ export const switchTeamFn = createServerFn({ method: "POST" })
       .from("players")
       .update({ team: data.team, slot_number: slot, ready: false })
       .eq("id", me.id);
-    if (updErr) throw new Error(updErr.message);
+    if (updErr) dbFail(updErr);
     await supabaseAdmin
       .from("players")
       .update({ ready: false })
@@ -222,7 +229,7 @@ export const toggleReadyFn = createServerFn({ method: "POST" })
       .from("players")
       .update({ ready: !me.ready })
       .eq("id", me.id);
-    if (updErr) throw new Error(updErr.message);
+    if (updErr) dbFail(updErr);
 
     // If all 4 are now ready and the room is still waiting, start the game.
     const players = await loadPlayers(data.roomId);
@@ -337,7 +344,7 @@ export const makeMoveFn = createServerFn({ method: "POST" })
       .update(update as never)
       .eq("room_id", data.roomId)
       .is("winner", null);
-    if (error) throw new Error(error.message);
+    if (error) dbFail(error);
     return { ok: true };
   });
 
@@ -387,7 +394,7 @@ export const sendChatFn = createServerFn({ method: "POST" })
       player_id: me.id,
       message: data.message,
     });
-    if (error) throw new Error(error.message);
+    if (error) dbFail(error);
     return { ok: true };
   });
 
@@ -396,6 +403,14 @@ export const playAgainFn = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ roomId: uuidSchema }).parse(input))
   .handler(async ({ data, context }) => {
     await assertParticipant(data.roomId, context.userId);
+    const { data: state } = await supabaseAdmin
+      .from("game_state")
+      .select("winner")
+      .eq("room_id", data.roomId)
+      .maybeSingle();
+    if (state && !state.winner) {
+      throw new Error("Game is still in progress");
+    }
     const players = await loadPlayers(data.roomId);
     if (players.length !== 4) throw new Error("Need 4 players to start a new round");
     await startNewRound(data.roomId, players);
@@ -423,7 +438,7 @@ export const reportDisconnectFn = createServerFn({ method: "POST" })
       .eq("room_id", data.roomId)
       .is("disconnected_player_id", null)
       .is("winner", null);
-    if (error) throw new Error(error.message);
+    if (error) dbFail(error);
     return { ok: true };
   });
 
@@ -442,7 +457,7 @@ export const clearDisconnectFn = createServerFn({ method: "POST" })
       } as never)
       .eq("room_id", data.roomId)
       .eq("disconnected_player_id", data.playerId);
-    if (error) throw new Error(error.message);
+    if (error) dbFail(error);
     return { ok: true };
   });
 
