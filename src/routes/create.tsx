@@ -1,34 +1,33 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { getSavedNick, saveNick, type Team } from "@/lib/fourwin";
+import { type Team } from "@/lib/fourwin";
 import { createRoomFn } from "@/lib/fourwin.functions";
+import { supabase } from "@/integrations/supabase/client";
+import { SiteHeader } from "@/components/site-header";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/create")({
   head: () => ({ meta: [{ title: "Create Room — FourWin" }] }),
+  beforeLoad: async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) throw redirect({ to: "/login" });
+  },
   component: CreatePage,
 });
 
 function CreatePage() {
   const navigate = useNavigate();
-  const [nick, setNick] = useState(getSavedNick());
   const [team, setTeam] = useState<Team>("red");
   const [loading, setLoading] = useState(false);
   const createRoomCall = useServerFn(createRoomFn);
 
   const submit = async () => {
-    if (!nick.trim()) {
-      toast.error("Pick a nickname");
-      return;
-    }
     setLoading(true);
     try {
-      saveNick(nick.trim());
-      const { code } = await createRoomCall({ data: { nickname: nick.trim(), team } });
+      const { code } = await createRoomCall({ data: { team } });
       navigate({ to: "/room/$code", params: { code } });
     } catch (e) {
       toast.error((e as Error).message);
@@ -38,19 +37,12 @@ function CreatePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
-      <Card className="w-full max-w-md p-6 bg-card border-border">
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <div className="flex items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md p-6 bg-card border-border">
         <h1 className="text-2xl font-bold mb-1">Create a Room</h1>
-        <p className="text-sm text-muted-foreground mb-6">Pick your name and team. We'll generate a code to share.</p>
-
-        <label className="text-sm font-medium">Nickname</label>
-        <Input
-          maxLength={16}
-          value={nick}
-          onChange={(e) => setNick(e.target.value)}
-          placeholder="Your name"
-          className="mt-1 mb-4"
-        />
+        <p className="text-sm text-muted-foreground mb-6">Pick a team. We'll generate a code to share.</p>
 
         <label className="text-sm font-medium">Team</label>
         <div className="grid grid-cols-2 gap-3 mt-1">
@@ -69,7 +61,8 @@ function CreatePage() {
         <Button variant="ghost" className="w-full mt-2" onClick={() => navigate({ to: "/" })}>
           Back
         </Button>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
