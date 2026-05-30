@@ -1,6 +1,7 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SiteHeader } from "@/components/site-header";
 import { toast } from "sonner";
 import { Lock, Crown, Flame, Sparkles, Zap } from "lucide-react";
 
