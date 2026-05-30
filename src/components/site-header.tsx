@@ -16,21 +16,36 @@ export function SiteHeader() {
     navigate({ to: "/" });
   };
 
+  const path = location.pathname;
+  const isAuthPage = path === "/login" || path === "/register";
+
   return (
     <header className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
-      <Link to="/" className="flex items-center gap-2 font-bold text-xl">
+      <Link
+        to="/"
+        className="flex items-center gap-2 font-bold text-xl rounded-lg px-2 py-1 -ml-2 hover:bg-secondary/50 transition"
+      >
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#ef4444] to-[#3b82f6]" />
         FourWin
       </Link>
-      <nav className="flex items-center gap-2">
-        <Link to="/shop" className="text-sm text-muted-foreground hover:text-foreground transition px-2">
+      <nav className="flex items-center gap-1">
+        <Link
+          to="/"
+          className={`text-sm transition px-3 py-1.5 rounded-md ${path === "/" ? "text-foreground bg-secondary/60" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"}`}
+        >
+          Home
+        </Link>
+        <Link
+          to="/shop"
+          className={`text-sm transition px-3 py-1.5 rounded-md ${path === "/shop" ? "text-foreground bg-secondary/60" : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"}`}
+        >
           Shop
         </Link>
         {loading ? null : user && profile ? (
           <>
             <Link
               to="/profile"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-secondary/60 transition"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition ${path === "/profile" ? "bg-secondary/60" : "hover:bg-secondary/40"}`}
             >
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#a855f7] to-[#3b82f6] flex items-center justify-center text-xs font-bold text-white">
                 {profile.nickname.slice(0, 1).toUpperCase()}
@@ -42,11 +57,11 @@ export function SiteHeader() {
             </Button>
           </>
         ) : user && !profile ? (
-          <Link to="/profile" className="text-sm">
+          <Link to="/profile" className="text-sm px-3 py-1.5 rounded-md hover:bg-secondary/40 transition">
             <User className="w-4 h-4 inline mr-1" />
             Account
           </Link>
-        ) : (
+        ) : isAuthPage ? null : (
           <>
             <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/login" })}>
               Login
