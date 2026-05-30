@@ -126,7 +126,30 @@ function RootComponent() {
       router.invalidate();
       queryClient.invalidateQueries();
     });
-    return () => subscription.unsubscribe();
+
+    // Recover from stale lazy-chunk references (e.g. after a redeploy or
+    // when a navigation cancels an in-flight import). A single full reload
+    // pulls the current manifest and resolves the chunk.
+    const reloadOnce = () => {
+      if (sessionStorage.getItem("__fw_chunk_reloaded") === "1") return;
+      sessionStorage.setItem("__fw_chunk_reloaded", "1");
+      window.location.reload();
+    };
+    const onPreloadError = () => reloadOnce();
+    const onUnhandled = (e: PromiseRejectionEvent) => {
+      const msg = String((e.reason as Error | undefined)?.message ?? e.reason ?? "");
+      if (/dynamically imported module|Importing a module script failed|Failed to fetch dynamically/i.test(msg)) {
+        reloadOnce();
+      }
+    };
+    window.addEventListener("vite:preloadError", onPreloadError);
+    window.addEventListener("unhandledrejection", onUnhandled);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("vite:preloadError", onPreloadError);
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    };
   }, [router, queryClient]);
 
   return (
