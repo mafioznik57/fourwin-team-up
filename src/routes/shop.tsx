@@ -1,6 +1,7 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SiteHeader } from "@/components/site-header";
 import { toast } from "sonner";
 import { Lock, Crown, Flame, Sparkles, Zap } from "lucide-react";
 
@@ -10,20 +11,13 @@ export const Route = createFileRoute("/shop")({
 });
 
 function ShopPage() {
-  const navigate = useNavigate();
   const buy = (label: string) => toast(`${label} — Coming Soon`, { description: "Payments aren't enabled yet." });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
-        <button onClick={() => navigate({ to: "/" })} className="text-sm text-muted-foreground hover:text-foreground">
-          ← Back
-        </button>
-        <h1 className="text-xl font-bold">FourWin Store</h1>
-        <div className="w-10" />
-      </header>
-
-      <main className="max-w-5xl mx-auto px-6 pb-16 space-y-10">
+      <SiteHeader />
+      <main className="max-w-5xl mx-auto px-6 pb-16 space-y-10 pt-6">
+        <h1 className="text-2xl font-bold">FourWin Store</h1>
         <Section title="Quick Chat Packs" subtitle="Spice up team chat with extra phrases.">
           <div className="grid sm:grid-cols-2 gap-4">
             <ProductCard
