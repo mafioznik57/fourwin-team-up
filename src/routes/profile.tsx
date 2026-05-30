@@ -29,6 +29,9 @@ function ProfilePage() {
     <div className="min-h-screen bg-background text-foreground">
       <SiteHeader />
       <main className="max-w-2xl mx-auto px-6 py-8">
+        <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4 transition">
+          ← Back to home
+        </Link>
         <h1 className="text-3xl font-bold mb-6">Your profile</h1>
         {loading || !profile ? (
           <p className="text-muted-foreground">Loading…</p>
