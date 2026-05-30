@@ -8,6 +8,7 @@ import { toast } from "sonner";
 export function SiteHeader() {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const signOut = async () => {
     await supabase.auth.signOut();
