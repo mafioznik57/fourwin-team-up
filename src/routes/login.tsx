@@ -86,7 +86,8 @@ function LoginPage() {
             Register
           </Link>
         </p>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }
