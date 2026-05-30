@@ -40,10 +40,12 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-4">
-      <Card className="w-full max-w-md p-6 bg-card border-border">
-        <h1 className="text-2xl font-bold mb-1">Sign in</h1>
-        <p className="text-sm text-muted-foreground mb-6">Welcome back to FourWin.</p>
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <div className="flex items-center justify-center px-4 pt-8">
+        <Card className="w-full max-w-md p-6 bg-card border-border">
+          <h1 className="text-2xl font-bold mb-1">Sign in</h1>
+          <p className="text-sm text-muted-foreground mb-6">Welcome back to FourWin.</p>
 
         <Button onClick={signInGoogle} variant="outline" className="w-full mb-4">
           Sign in with Google
