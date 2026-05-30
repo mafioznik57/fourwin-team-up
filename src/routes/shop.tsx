@@ -11,7 +11,6 @@ export const Route = createFileRoute("/shop")({
 });
 
 function ShopPage() {
-  const navigate = useNavigate();
   const buy = (label: string) => toast(`${label} — Coming Soon`, { description: "Payments aren't enabled yet." });
 
   return (
