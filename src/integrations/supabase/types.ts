@@ -188,6 +188,7 @@ export type Database = {
           code: string
           created_at: string
           id: string
+          mode: string
           status: string
           turn_order: Json
         }
@@ -195,6 +196,7 @@ export type Database = {
           code: string
           created_at?: string
           id?: string
+          mode?: string
           status?: string
           turn_order?: Json
         }
@@ -202,6 +204,7 @@ export type Database = {
           code?: string
           created_at?: string
           id?: string
+          mode?: string
           status?: string
           turn_order?: Json
         }

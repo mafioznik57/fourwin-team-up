@@ -12,8 +12,11 @@ import {
   emptyBoard,
   genRoomCode,
   isBoardFull,
+  playersPerTeam,
+  totalPlayers,
   shuffle,
   type Board,
+  type GameMode,
   type Team,
 } from "@/lib/fourwin";
 
@@ -25,6 +28,7 @@ function dbFail(err: { message?: string; code?: string } | null | undefined): ne
 
 
 const teamSchema = z.enum(["red", "blue"]);
+const modeSchema = z.enum(["2v2", "1v1"]);
 const codeSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6}$/);
 const uuidSchema = z.string().uuid();
 const colSchema = z.number().int().min(0).max(6);
@@ -107,16 +111,17 @@ async function startNewRound(roomId: string, players: PlayerLite[]) {
 export const createRoomFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ team: teamSchema }).parse(input),
+    z.object({ team: teamSchema, mode: modeSchema.optional() }).parse(input),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
+    const mode: GameMode = data.mode ?? "2v2";
     const nickname = await getProfileNickname(userId);
     for (let i = 0; i < 5; i++) {
       const code = genRoomCode();
       const { data: room, error } = await supabaseAdmin
         .from("rooms")
-        .insert({ code, status: "waiting" })
+        .insert({ code, status: "waiting", mode } as never)
         .select("id, code")
         .single();
       if (error) continue;
@@ -152,12 +157,14 @@ export const joinRoomFn = createServerFn({ method: "POST" })
     const nickname = await getProfileNickname(userId);
     const { data: room, error: roomErr } = await supabaseAdmin
       .from("rooms")
-      .select("id, code, status")
+      .select("id, code, status, mode")
       .eq("code", data.code)
       .maybeSingle();
     if (roomErr) dbFail(roomErr);
     if (!room) throw new Error("Room not found");
 
+    const mode: GameMode = ((room as { mode?: GameMode }).mode ?? "2v2") as GameMode;
+    const teamCap = playersPerTeam(mode);
     const players = await loadPlayers(room.id);
     const mine = players.find((p) => p.user_id === userId);
     if (mine) return { roomId: room.id, code: room.code, playerId: mine.id };
@@ -168,9 +175,9 @@ export const joinRoomFn = createServerFn({ method: "POST" })
     const redCount = players.filter((p) => p.team === "red").length;
     const blueCount = players.filter((p) => p.team === "blue").length;
     let team: Team = data.preferredTeam ?? (redCount <= blueCount ? "red" : "blue");
-    if (team === "red" && redCount >= 2) team = "blue";
-    if (team === "blue" && blueCount >= 2) team = "red";
-    if ((team === "red" && redCount >= 2) || (team === "blue" && blueCount >= 2)) {
+    if (team === "red" && redCount >= teamCap) team = "blue";
+    if (team === "blue" && blueCount >= teamCap) team = "red";
+    if ((team === "red" && redCount >= teamCap) || (team === "blue" && blueCount >= teamCap)) {
       throw new Error("Room is full");
     }
     const base = team === "red" ? 0 : 2;
@@ -210,9 +217,16 @@ export const switchTeamFn = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const me = await assertParticipant(data.roomId, context.userId);
     if (me.team === data.team) return { ok: true };
+    const { data: room } = await supabaseAdmin
+      .from("rooms")
+      .select("mode")
+      .eq("id", data.roomId)
+      .maybeSingle();
+    const mode: GameMode = ((room as { mode?: GameMode } | null)?.mode ?? "2v2") as GameMode;
+    const teamCap = playersPerTeam(mode);
     const players = await loadPlayers(data.roomId);
     const sameTeam = players.filter((p) => p.team === data.team && p.id !== me.id);
-    if (sameTeam.length >= 2) throw new Error("That team is full");
+    if (sameTeam.length >= teamCap) throw new Error("That team is full");
     const base = data.team === "red" ? 0 : 2;
     const usedSlots = new Set(
       players.filter((p) => p.id !== me.id).map((p) => p.slot_number),
@@ -241,14 +255,16 @@ export const toggleReadyFn = createServerFn({ method: "POST" })
       .eq("id", me.id);
     if (updErr) dbFail(updErr);
 
-    // If all 4 are now ready and the room is still waiting, start the game.
+    // If everyone needed is now ready and the room is still waiting, start.
     const players = await loadPlayers(data.roomId);
-    if (players.length === 4 && players.every((p) => p.ready)) {
-      const { data: room } = await supabaseAdmin
-        .from("rooms")
-        .select("status")
-        .eq("id", data.roomId)
-        .maybeSingle();
+    const { data: room } = await supabaseAdmin
+      .from("rooms")
+      .select("status, mode")
+      .eq("id", data.roomId)
+      .maybeSingle();
+    const mode: GameMode = ((room as { mode?: GameMode } | null)?.mode ?? "2v2") as GameMode;
+    const needed = totalPlayers(mode);
+    if (players.length === needed && players.every((p) => p.ready)) {
       if (room?.status === "waiting") {
         await startNewRound(data.roomId, players);
       }
@@ -421,8 +437,17 @@ export const playAgainFn = createServerFn({ method: "POST" })
     if (state && !state.winner) {
       throw new Error("Game is still in progress");
     }
+    const { data: room } = await supabaseAdmin
+      .from("rooms")
+      .select("mode")
+      .eq("id", data.roomId)
+      .maybeSingle();
+    const mode: GameMode = ((room as { mode?: GameMode } | null)?.mode ?? "2v2") as GameMode;
+    const needed = totalPlayers(mode);
     const players = await loadPlayers(data.roomId);
-    if (players.length !== 4) throw new Error("Need 4 players to start a new round");
+    if (players.length !== needed) {
+      throw new Error(`Need ${needed} players to start a new round`);
+    }
     await startNewRound(data.roomId, players);
     return { ok: true };
   });
