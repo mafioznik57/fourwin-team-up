@@ -17,6 +17,7 @@ import { Copy, Link as LinkIcon, Check, Hourglass } from "lucide-react";
 export const Route = createFileRoute("/room/$code")({
   head: () => ({ meta: [{ title: "Room — FourWin" }] }),
   beforeLoad: async () => {
+    if (typeof window === "undefined") return;
     const { data } = await supabase.auth.getUser();
     if (!data.user) throw redirect({ to: "/login" });
   },

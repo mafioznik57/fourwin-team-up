@@ -12,6 +12,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/create")({
   head: () => ({ meta: [{ title: "Create Room — FourWin" }] }),
   beforeLoad: async () => {
+    if (typeof window === "undefined") return;
     const { data } = await supabase.auth.getUser();
     if (!data.user) throw redirect({ to: "/login" });
   },
