@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { type Team } from "@/lib/fourwin";
+import { type GameMode, type Team } from "@/lib/fourwin";
 import { createRoomFn } from "@/lib/fourwin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { SiteHeader } from "@/components/site-header";
@@ -22,13 +22,14 @@ export const Route = createFileRoute("/create")({
 function CreatePage() {
   const navigate = useNavigate();
   const [team, setTeam] = useState<Team>("red");
+  const [mode, setMode] = useState<GameMode>("2v2");
   const [loading, setLoading] = useState(false);
   const createRoomCall = useServerFn(createRoomFn);
 
   const submit = async () => {
     setLoading(true);
     try {
-      const { code } = await createRoomCall({ data: { team } });
+      const { code } = await createRoomCall({ data: { team, mode } });
       navigate({ to: "/room/$code", params: { code } });
     } catch (e) {
       toast.error((e as Error).message);
@@ -43,7 +44,13 @@ function CreatePage() {
       <div className="flex items-center justify-center px-4 py-8">
         <Card className="w-full max-w-md p-6 bg-card border-border">
         <h1 className="text-2xl font-bold mb-1">Create a Room</h1>
-        <p className="text-sm text-muted-foreground mb-6">Pick a team. We'll generate a code to share.</p>
+        <p className="text-sm text-muted-foreground mb-6">Pick a mode and a team. We'll generate a code to share.</p>
+
+        <label className="text-sm font-medium">Mode</label>
+        <div className="grid grid-cols-2 gap-3 mt-1 mb-4">
+          <ModeButton label="1 vs 1" sub="Duel" active={mode === "1v1"} onClick={() => setMode("1v1")} />
+          <ModeButton label="2 vs 2" sub="Teams" active={mode === "2v2"} onClick={() => setMode("2v2")} />
+        </div>
 
         <label className="text-sm font-medium">Team</label>
         <div className="grid grid-cols-2 gap-3 mt-1">
@@ -79,6 +86,20 @@ function TeamButton({ color, label, active, onClick }: { color: string; label: s
     >
       <div className="w-6 h-6 rounded-full" style={{ backgroundColor: color }} />
       <span className="font-semibold">{label}</span>
+    </button>
+  );
+}
+
+function ModeButton({ label, sub, active, onClick }: { label: string; sub: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`p-4 rounded-lg border-2 transition text-left ${
+        active ? "border-[#a855f7] bg-[#a855f7]/10" : "border-border hover:border-white/30"
+      }`}
+    >
+      <div className="font-semibold">{label}</div>
+      <div className="text-xs text-muted-foreground">{sub}</div>
     </button>
   );
 }
