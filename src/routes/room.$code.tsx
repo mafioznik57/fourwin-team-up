@@ -8,6 +8,9 @@ import {
   type PlayerRow,
   type RoomRow,
   type Team,
+  type GameMode,
+  playersPerTeam,
+  totalPlayers,
 } from "@/lib/fourwin";
 import { joinRoomFn, switchTeamFn, toggleReadyFn } from "@/lib/fourwin.functions";
 import { useUserId } from "@/hooks/use-user-id";
@@ -49,6 +52,9 @@ function RoomLobby() {
   const [notFound, setNotFound] = useState(false);
   const roomId = room?.id;
   const roomStatus = room?.status;
+  const mode: GameMode = (room?.mode ?? "2v2") as GameMode;
+  const teamCap = playersPerTeam(mode);
+  const needed = totalPlayers(mode);
 
   // Initial load
   useEffect(() => {
@@ -154,10 +160,10 @@ function RoomLobby() {
   useEffect(() => {
     if (!userId || !roomId || me || joining || notFound) return;
     if (roomStatus !== "waiting") return;
-    if (players.length >= 4) return;
+    if (players.length >= needed) return;
     void join();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, roomId, me, roomStatus, players.length, notFound]);
+  }, [userId, roomId, me, roomStatus, players.length, notFound, needed]);
 
   const switchTeam = async (team: Team) => {
     if (!me || !roomId) return;
@@ -223,7 +229,7 @@ function RoomLobby() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                Room code
+                Room code · {mode === "1v1" ? "1 vs 1" : "2 vs 2"}
               </div>
               <div className="text-4xl font-extrabold tracking-widest">{upperCode}</div>
             </div>
@@ -272,6 +278,7 @@ function RoomLobby() {
             label="Red Team"
             players={redPlayers}
             me={me}
+            capacity={teamCap}
             onSwitch={() => switchTeam("red")}
           />
           <TeamPanel
@@ -279,6 +286,7 @@ function RoomLobby() {
             label="Blue Team"
             players={bluePlayers}
             me={me}
+            capacity={teamCap}
             onSwitch={() => switchTeam("blue")}
           />
         </div>
@@ -298,11 +306,11 @@ function RoomLobby() {
             </Button>
           ) : null}
           <p className="text-xs text-muted-foreground">
-            {players.length < 4
-              ? `Waiting for players (${players.length}/4)`
+            {players.length < needed
+              ? `Waiting for players (${players.length}/${needed})`
               : players.every((p) => p.ready)
                 ? "Starting game…"
-                : `Ready: ${players.filter((p) => p.ready).length}/4`}
+                : `Ready: ${players.filter((p) => p.ready).length}/${needed}`}
           </p>
         </div>
       </div>
@@ -315,16 +323,18 @@ function TeamPanel({
   label,
   players,
   me,
+  capacity,
   onSwitch,
 }: {
   color: string;
   label: string;
   players: PlayerRow[];
   me: PlayerRow | null;
+  capacity: number;
   onSwitch: () => void;
 }) {
   const meIsHere = me && players.some((p) => p.id === me.id);
-  const canSwitch = me && !meIsHere && players.length < 2;
+  const canSwitch = me && !meIsHere && players.length < capacity;
   return (
     <Card className="p-5 bg-card border-border" style={{ borderTop: `3px solid ${color}` }}>
       <div className="flex items-center justify-between">
@@ -338,7 +348,7 @@ function TeamPanel({
         )}
       </div>
       <div className="mt-3 space-y-2">
-        {[0, 1].map((i) => {
+        {Array.from({ length: capacity }, (_, i) => i).map((i) => {
           const p = players[i];
           return (
             <div
