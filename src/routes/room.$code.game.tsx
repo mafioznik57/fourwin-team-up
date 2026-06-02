@@ -371,7 +371,10 @@ function GamePage() {
 
         {/* Turn order bar */}
         <Card className="p-3 bg-card border-border">
-          <div className="grid grid-cols-4 gap-2">
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${Math.max(order.length, 1)}, minmax(0, 1fr))` }}
+          >
             {order.map((pid, idx) => {
               const p = players.find((x) => x.id === pid);
               if (!p) return <div key={pid} />;

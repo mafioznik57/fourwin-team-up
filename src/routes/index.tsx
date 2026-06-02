@@ -39,8 +39,10 @@ function Landing() {
             Connect Four. Together.
           </p>
           <p className="mt-6 max-w-xl mx-auto text-muted-foreground">
-            A real-time <span className="text-foreground font-medium">2v2 team Connect Four</span>.
-            Two teammates alternate turns against the rival team — strategize, communicate, and beat the clock.
+            A real-time Connect Four with{" "}
+            <span className="text-foreground font-medium">1v1 duels</span> and{" "}
+            <span className="text-foreground font-medium">2v2 teams</span>. Strategize,
+            communicate, and beat the clock.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
@@ -54,8 +56,8 @@ function Landing() {
         </section>
 
         <section className="grid md:grid-cols-3 gap-4 py-8">
-          <FeatureCard icon={<Users className="text-[#ef4444]" />} title="2 vs 2 Teams" desc="Red team vs Blue team. Each player takes turns in a fixed random order." />
-          <FeatureCard icon={<Sparkles className="text-[#a855f7]" />} title="Team Chess Clock" desc="5 minutes per team total. Run out of time and your team loses." />
+          <FeatureCard icon={<Users className="text-[#ef4444]" />} title="1v1 or 2v2" desc="Duel head-to-head, or pair up — two teammates alternate turns against the rivals." />
+          <FeatureCard icon={<Sparkles className="text-[#a855f7]" />} title="Chess Clock" desc="5 minutes per side total. Run out of time and you lose." />
           <FeatureCard icon={<Trophy className="text-[#3b82f6]" />} title="Quick Chat" desc="Tap preset phrases to hype teammates and trash-talk rivals." />
         </section>
 
