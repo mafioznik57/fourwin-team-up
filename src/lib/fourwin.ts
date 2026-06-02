@@ -99,6 +99,17 @@ export interface RoomRow {
   code: string;
   status: string;
   turn_order: string[]; // player ids
+  mode: GameMode;
+}
+
+export type GameMode = "2v2" | "1v1";
+
+export function playersPerTeam(mode: GameMode): number {
+  return mode === "1v1" ? 1 : 2;
+}
+
+export function totalPlayers(mode: GameMode): number {
+  return mode === "1v1" ? 2 : 4;
 }
 
 export interface GameStateRow {
